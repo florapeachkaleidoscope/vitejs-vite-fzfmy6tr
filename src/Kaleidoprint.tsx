@@ -774,8 +774,7 @@ export default function Kaleidoprint() {
     }));
   }, []);
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
+  const loadImageFile = (file, idx) => {
     if (!file) return;
     const name = file.name.replace(/\.[^.]+$/, "");
     const reader = new FileReader();
@@ -789,21 +788,23 @@ export default function Kaleidoprint() {
         const src = ev.target.result;
         setClipartLibrary(prev => {
           if (prev.some(c => c.src === src)) return prev;
-          return [...prev, { id: `lib-${Date.now()}`, src, name }];
+          return [...prev, { id: `lib-${Date.now()}-${idx}`, src, name }];
         });
         addItem({
           type: "image",
-          src,            // (it's `src: clip.src` in the library one, leave that as-is)
+          x: cw / 2 - 30 + idx * 24,
+          y: ch / 2 - 30 + idx * 24,
+          src,
           w,
           h,
-          aspect: img.height / img.width,   // ← add this
+          aspect: img.height / img.width,
         });
       };
       img.src = ev.target.result;
     };
     reader.readAsDataURL(file);
-    e.target.value = "";
   };
+  const handleImageUpload = (e) => { Array.from(e.target.files || []).forEach((file, idx) => loadImageFile(file, idx)); e.target.value = ""; };
 
   const addLetter = (letter) => {
     const color = letterColor || LETTER_COLORS[letterColorIdx % LETTER_COLORS.length];
@@ -1096,7 +1097,7 @@ export default function Kaleidoprint() {
               <Section title="Upload to Library">
                 <button onClick={() => fileRef.current.click()} style={primaryBtn}>📎 Upload PNG / JPG</button>
                 <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/gif,image/webp"
-                  onChange={handleImageUpload} style={{ display: "none" }} />
+                  multiple onChange={handleImageUpload} style={{ display: "none" }} />
                 <div style={{ marginTop: 8, fontSize: 11, color: "#aaa" }}>
                   Uploads save to your library permanently. Click any image to place it on the board.
                 </div>
