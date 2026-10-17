@@ -514,11 +514,11 @@ function drawClipartPages(doc, { items, boardDims, bgColor }) {
           const fmt = item.src.startsWith("data:image/png") ? "PNG" : "JPEG";
           // Place full image starting at (MARGIN - srcX, MARGIN - srcY)
           // so the srcX/srcY portion aligns with MARGIN
-          doc.addImage(
-            item.src, fmt,
-            i(MARGIN - srcX), i(MARGIN - srcY),
-            i(realW), i(realH)
-          );
+          const props = doc.getImageProperties(item.src);
+          const ratio = props.height / props.width;
+          let dw = w, dh = w * ratio;
+          if (dh > h) { dh = h; dw = h / ratio; }
+          doc.addImage(item.src, "PNG", x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
         } catch(e) {
           setFill(doc, "#eeeeee");
           doc.rect(i(MARGIN), i(MARGIN), i(srcW), i(srcH), "F");

@@ -412,7 +412,12 @@ function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
           <div style={propLabel}>Width</div>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <input type="range" min={20} max={400} value={item.w || item.size}
-              onChange={e => onUpdate(item.id, { w: +e.target.value, h: +e.target.value })}
+              onChange={e => {
+                const w = +e.target.value;
+                const ratio = (item.h || item.size) / (item.w || item.size);
+                onUpdate(item.id, { w, h: w * ratio });
+              }}
+      
               style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: "#888", minWidth: 32 }}>{item.w || item.size}px</span>
           </div>
@@ -752,7 +757,15 @@ export default function Kaleidoprint() {
       if (handleId.includes("b")) h = Math.max(20, origB.h + dy);
       if (handleId.includes("t")) { h = Math.max(20, origB.h - dy); y = origB.y + origB.h - h; }
 
-      if (it.type === "image") return { ...it, x, y, w, h };
+      if (it.type === "image") {
+        const a = it.aspect || origB.h / origB.w;
+        let nw = w, nh = h;
+        if (handleId === "t" || handleId === "b") nw = nh / a;  // top/bottom edge handles
+        else nh = nw * a;                                       // everything else follows width
+        const nx = handleId.includes("l") ? origB.x + origB.w - nw : origB.x;
+        const ny = handleId.includes("t") ? origB.y + origB.h - nh : origB.y;
+        return { ...it, x: nx, y: ny, w: nw, h: nh };
+      }
       if (it.type === "letter" || it.type === "phrase") {
         const newSize = Math.max(12, Math.round(it.size * (w / origB.w)));
         return { ...it, x, y, size: newSize };
@@ -778,7 +791,13 @@ export default function Kaleidoprint() {
           if (prev.some(c => c.src === src)) return prev;
           return [...prev, { id: `lib-${Date.now()}`, src, name }];
         });
-        addItem({ type: "image", src, w, h });
+        addItem({
+          type: "image",
+          src,            // (it's `src: clip.src` in the library one, leave that as-is)
+          w,
+          h,
+          aspect: img.height / img.width,   // ← add this
+        });
       };
       img.src = ev.target.result;
     };
@@ -1100,8 +1119,14 @@ export default function Kaleidoprint() {
                               const ratio = img.width / img.height;
                               const w = ratio >= 1 ? maxDim : Math.round(maxDim * ratio);
                               const h = ratio < 1 ? maxDim : Math.round(maxDim / ratio);
-                              addItem({ type: "image", src: clip.src, w, h });
-                            };
+                              addItem({
+                                type: "image",
+                                src: clip.src,
+                                w,
+                                h,
+                                aspect: img.height / img.width,   // ← add this
+                              });
+                              };
                             img.src = clip.src;
                           }}
                           title={clip.name}
