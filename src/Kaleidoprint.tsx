@@ -380,6 +380,31 @@ function DraggableItem({ item, scale, selected, onSelect, onTap, onMove, onSnaps
 
 // ── Properties panel ────────────────────────────────────────────────────────
 
+// Board px ↔ real inches (1 ft = SCALE_BASE px)
+const PX_PER_IN = SCALE_BASE / 12;
+const fmtIn = (v) => String(Math.round(v * 100) / 100);
+
+// Number box for a size in inches; applies on Enter or when you click away
+function InchBox({ label, value, onCommit }) {
+  const [text, setText] = useState(fmtIn(value));
+  useEffect(() => { setText(fmtIn(value)); }, [value]);
+  const commit = () => {
+    const v = parseFloat(text);
+    if (v > 0) onCommit(v); else setText(fmtIn(value));
+  };
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: "#888", flex: 1 }}>
+      {label}
+      <input type="number" min={0.25} step={0.25} value={text}
+        onChange={e => setText(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+        style={{ width: "100%", minWidth: 0, padding: "4px 6px", fontSize: 12, border: "1px solid #c4aff8", borderRadius: 6 }} />
+      in
+    </label>
+  );
+}
+
 function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
   if (!item) return null;
 
@@ -412,22 +437,26 @@ function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
         </div>
       )}
 
-      {item.type === "image" && (
-        <div style={{ marginBottom: 10 }}>
-          <div style={propLabel}>Width</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <input type="range" min={20} max={400} value={item.w || item.size}
-              onChange={e => {
-                const w = +e.target.value;
-                const ratio = item.aspect || (item.h || item.size) / (item.w || item.size);
-                onUpdate(item.id, { w, h: w * ratio });
-              }}
-      
-              style={{ flex: 1 }} />
-            <span style={{ fontSize: 12, color: "#888", minWidth: 32 }}>{item.w || item.size}px</span>
+      {item.type === "image" && (() => {
+        const w = item.w || item.size, h = item.h || item.size;
+        const ratio = item.aspect || h / w;
+        const setWidthPx = (nw) => onUpdate(item.id, { w: nw, h: nw * ratio });
+        return (
+          <div style={{ marginBottom: 10 }}>
+            <div style={propLabel}>Size</div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <input type="range" min={20} max={400} value={w}
+                onChange={e => setWidthPx(+e.target.value)}
+                style={{ flex: 1 }} />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <InchBox label="W" value={w / PX_PER_IN} onCommit={v => setWidthPx(v * PX_PER_IN)} />
+              <InchBox label="H" value={h / PX_PER_IN} onCommit={v => setWidthPx((v * PX_PER_IN) / ratio)} />
+            </div>
+            <div style={{ fontSize: 10, color: "#aaa", marginTop: 4 }}>Real printed size · shape stays locked</div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {(item.type === "letter" || item.type === "phrase") && (
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10 }}>
