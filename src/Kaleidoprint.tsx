@@ -342,7 +342,7 @@ function SelectionBox({ item, scale, onResize }) {
 
 // ── Draggable wrapper ──────────────────────────────────────────────────────────
 
-function DraggableItem({ item, scale, selected, onSelect, onMove, onSnapshot, children }) {
+function DraggableItem({ item, scale, selected, onSelect, onTap, onMove, onSnapshot, children }) {
   const dragging = useRef(false);
   const hasMoved = useRef(false);
   const startPos = useRef(null);
@@ -361,7 +361,12 @@ function DraggableItem({ item, scale, selected, onSelect, onMove, onSnapshot, ch
       const dy = (me.clientY - startPos.current.my) / scale;
       onMove(item.id, startPos.current.ix + dx, startPos.current.iy + dy);
     };
-    const onUp = () => { dragging.current = false; window.removeEventListener("mousemove", onM); window.removeEventListener("mouseup", onUp); };
+    const onUp = () => {
+      dragging.current = false;
+      window.removeEventListener("mousemove", onM);
+      window.removeEventListener("mouseup", onUp);
+      if (!hasMoved.current && onTap) onTap(item.id, e);
+    };
     window.addEventListener("mousemove", onM);
     window.addEventListener("mouseup", onUp);
   };
@@ -666,6 +671,72 @@ export default function Kaleidoprint() {
   const selectedId = selectedIds.size === 1 ? [...selectedIds][0] : null;
   const selectedItem = selectedId ? (items.find(it => it.id === selectedId) || null) : null;
 
+  // Always-current copies for drag/marquee handlers (avoids stale closures)
+  const selectedRef = useRef(selectedIds);
+  selectedRef.current = selectedIds;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+
+  // ── Drag-a-box (marquee) selection ──
+  const [marquee, setMarquee] = useState(null);
+  const startMarquee = (e) => {
+    if (e.button !== 0 || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const toBoard = (ev) => ({ x: (ev.clientX - rect.left) / scale, y: (ev.clientY - rect.top) / scale });
+    const additive = e.metaKey || e.ctrlKey || e.shiftKey;
+    const base = additive ? new Set(selectedRef.current) : new Set();
+    const p0 = toBoard(e);
+    let moved = false;
+    if (!additive) setSelectedIds(new Set());
+    const onM = (me) => {
+      const p = toBoard(me);
+      if (!moved && Math.abs(p.x - p0.x) + Math.abs(p.y - p0.y) < 3) return;
+      moved = true;
+      const box = { x: Math.min(p0.x, p.x), y: Math.min(p0.y, p.y), w: Math.abs(p.x - p0.x), h: Math.abs(p.y - p0.y) };
+      setMarquee(box);
+      const next = new Set(base);
+      itemsRef.current.forEach(it => {
+        const b = itemBounds(it);
+        if (b.x < box.x + box.w && b.x + b.w > box.x && b.y < box.y + box.h && b.y + b.h > box.y) next.add(it.id);
+      });
+      setSelectedIds(next);
+    };
+    const onUp = () => {
+      setMarquee(null);
+      window.removeEventListener("mousemove", onM);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onM);
+    window.addEventListener("mouseup", onUp);
+  };
+
+  // ── Scale a multi-selection together ──
+  const [groupScale, setGroupScale] = useState(100);
+  const groupBase = useRef(null);
+  useEffect(() => { setGroupScale(100); groupBase.current = null; }, [selectedIds]);
+  const applyGroupScale = (pct) => {
+    if (!groupBase.current) {
+      const base = itemsRef.current.filter(it => selectedRef.current.has(it.id));
+      if (!base.length) return;
+      snapshot();
+      const bs = base.map(itemBounds);
+      const minX = Math.min(...bs.map(b => b.x)), minY = Math.min(...bs.map(b => b.y));
+      const maxX = Math.max(...bs.map(b => b.x + b.w)), maxY = Math.max(...bs.map(b => b.y + b.h));
+      groupBase.current = { map: new Map(base.map(it => [it.id, it])), cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+    }
+    const { map, cx, cy } = groupBase.current;
+    const s = pct / 100;
+    setGroupScale(pct);
+    setItems(prev => prev.map(it => {
+      const b = map.get(it.id);
+      if (!b) return it;
+      const x = cx + (b.x - cx) * s, y = cy + (b.y - cy) * s;
+      if (b.type === "image") return { ...it, x, y, w: (b.w || b.size) * s, h: (b.h || b.size) * s };
+      return { ...it, x, y, size: Math.max(8, Math.round(b.size * s)) };
+    }));
+  };
+  const endGroupScale = () => { groupBase.current = null; setGroupScale(100); };
+
   const addItem = useCallback((item) => {
     snapshot();
     setItems(prev => [...prev, { id: uid(), x: cw / 2 - 30, y: ch / 2 - 30, ...item }]);
@@ -678,11 +749,11 @@ export default function Kaleidoprint() {
       const dx = x - dragged.x, dy = y - dragged.y;
       return prev.map(it => {
         if (it.id === id) return { ...it, x, y };
-        if (selectedIds.has(it.id)) return { ...it, x: it.x + dx, y: it.y + dy };
+        if (selectedRef.current.has(it.id)) return { ...it, x: it.x + dx, y: it.y + dy };
         return it;
       });
     });
-  }, [selectedIds]);
+  }, []);
 
   const updateItem = useCallback((id, patch) => {
     snapshot();
@@ -1192,6 +1263,17 @@ export default function Kaleidoprint() {
           <div style={{ padding: "12px 16px", borderTop: "2px solid #E8186D", background: "#fff5f8" }}>
             <div style={{ fontSize: 11, fontWeight: 700, color: "#E8186D", marginBottom: 8 }}>
               {selectedIds.size} items selected
+              </div>
+            <div style={{ fontSize: 11, color: "#999", marginBottom: 8 }}>
+              Drag any selected item to move them all
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 11, color: "#888", minWidth: 72 }}>Scale group</span>
+              <input type="range" min={25} max={300} step={5} value={groupScale}
+                onChange={e => applyGroupScale(+e.target.value)}
+                onPointerUp={endGroupScale} onKeyUp={endGroupScale}
+                style={{ flex: 1 }} />
+              <span style={{ fontSize: 12, color: "#888", minWidth: 36 }}>{groupScale}%</span>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => deleteItem(null)} style={{
@@ -1324,9 +1406,9 @@ export default function Kaleidoprint() {
               width={cw} height={ch}
               style={{ display: "block", borderRadius: 8 }}
               xmlns="http://www.w3.org/2000/svg"
+              onMouseDown={startMarquee}
             >
-              <rect x={0} y={0} width={cw} height={ch} fill={bgColor}
-                onClick={() => setSelectedIds(new Set())} style={{ cursor: "default" }} />
+              <rect x={0} y={0} width={cw} height={ch} fill={bgColor} style={{ cursor: "crosshair" }} />
 
               <PngBorder x={0} y={0} width={cw} height={ch} size={borderSize} pngs={borderPngs} patternSize={18} />
               {builtinBorder === "solid" && (
@@ -1349,13 +1431,18 @@ export default function Kaleidoprint() {
                   <DraggableItem key={item.id} item={item} scale={scale}
                     selected={isSel}
                     onSelect={(id, e) => {
-                      if (e && (e.metaKey || e.ctrlKey)) {
+                      if (e && (e.metaKey || e.ctrlKey || e.shiftKey)) {
                         setSelectedIds(prev => {
                           const n = new Set(prev);
                           n.has(id) ? n.delete(id) : n.add(id);
                           return n;
                         });
-                      } else {
+                      } else if (!selectedRef.current.has(id)) {
+                        setSelectedIds(new Set([id]));
+                      }
+                    }}
+                    onTap={(id, e) => {
+                      if (!(e.metaKey || e.ctrlKey || e.shiftKey) && selectedRef.current.size > 1) {
                         setSelectedIds(new Set([id]));
                       }
                     }}
@@ -1405,6 +1492,12 @@ export default function Kaleidoprint() {
                   </DraggableItem>
                 );
               })}
+
+              {marquee && (
+                <rect x={marquee.x} y={marquee.y} width={marquee.w} height={marquee.h}
+                  fill="rgba(232,24,109,0.08)" stroke="#E8186D" strokeWidth={1 / scale}
+                  strokeDasharray={`${4 / scale} ${3 / scale}`} pointerEvents="none" />
+              )}
             </svg>
           </div>
         </div>
