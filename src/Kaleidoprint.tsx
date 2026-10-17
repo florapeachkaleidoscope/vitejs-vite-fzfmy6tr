@@ -414,7 +414,7 @@ function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
             <input type="range" min={20} max={400} value={item.w || item.size}
               onChange={e => {
                 const w = +e.target.value;
-                const ratio = (item.h || item.size) / (item.w || item.size);
+                const ratio = item.aspect || (item.h || item.size) / (item.w || item.size);
                 onUpdate(item.id, { w, h: w * ratio });
               }}
       

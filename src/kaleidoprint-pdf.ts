@@ -612,8 +612,11 @@ function drawClipartPages(doc, { items, boardDims, bgColor }) {
   if (!images.length) return;
 
   images.forEach((item, idx) => {
-    const realW = pxToIn(item.w || item.size, boardDims);
-    const realH = pxToIn(item.h || item.size, boardDims);
+    // Fit the image inside its box without stretching (keeps original ratio)
+    const boxW = pxToIn(item.w || item.size, boardDims), boxH = pxToIn(item.h || item.size, boardDims);
+    let aspect = item.aspect || boxH / boxW;
+    try { const p = doc.getImageProperties(item.src); if (p.width && p.height) aspect = p.height / p.width; } catch { /* keep fallback */ }
+    const realW = Math.min(boxW, boxH / aspect), realH = realW * aspect;
 
     drawTiledItem(doc, {
       realW, realH,
