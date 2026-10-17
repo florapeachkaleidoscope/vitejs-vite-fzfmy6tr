@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { exportPDF } from "./kaleidoprint-pdf";
+import { exportPDF, CELL_W, CELL_H } from "./kaleidoprint-pdf";
 
 const RAINBOW = ["#FF4E50","#FC913A","#F9D62E","#52D726","#1A91FF","#9B59B6","#FF69B4"];
 const BOARD_PRESETS = { "4×4 ft": { w: 4, h: 4 }, "6×4 ft": { w: 6, h: 4 }, "8x4 ft": { w: 8, h: 4 } };
@@ -485,9 +485,10 @@ const zBtn = { flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, backgro
 // ── Page grid overlay ────────────────────────────────────────────────────────
 
 function PageGrid({ cw, ch, boardDims }) {
+  // One grid cell = one printed board page (same sizes the PDF export uses)
   const pxPerIn = SCALE_BASE / 12;
-  const pageW = 8.5 * pxPerIn;
-  const pageH = 11 * pxPerIn;
+  const pageW = CELL_W * pxPerIn;
+  const pageH = CELL_H * pxPerIn;
   const lines = [];
 
   let x = pageW;
@@ -526,6 +527,16 @@ function PageGrid({ cw, ch, boardDims }) {
 
   const cols = Math.ceil(cw / pageW);
   const rows = Math.ceil(ch / pageH);
+
+  // Small "R1 C1" tag in the corner of every page cell
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      lines.push(
+        <text key={`cell-${r}-${c}`} x={c * pageW + 4} y={r * pageH + 24} fontSize={7}
+          fill="rgba(100,100,200,0.45)" fontFamily="sans-serif">R{r + 1} C{c + 1}</text>
+      );
+    }
+  }
 
   return (
     <g style={{ pointerEvents: "none" }}>

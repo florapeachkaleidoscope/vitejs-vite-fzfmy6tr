@@ -9,6 +9,12 @@ const PRINT_H = PAGE_H - MARGIN * 2;
 const PT = 72;        // points per inch
 const SCALE_BASE = 80; // canvas px per foot (must match Kaleidoprint.jsx)
 
+// Board page grid: each page covers one CELL of the board plus an OVERLAP strip
+// of the next cell (right and below) for lining pages up. The app's grid uses these too.
+export const OVERLAP = 0.5;               // inches
+export const CELL_W = PRINT_W - OVERLAP;  // 7.2"
+export const CELL_H = PRINT_H - OVERLAP;  // 9.7"
+
 // Convert inches to points
 function i(v) { return v * PT; }
 
@@ -79,31 +85,6 @@ function drawScallopVertPDF(doc, flatX, cy, r, domeRight) {
   const start = pts[0];
   const moves = pts.slice(1).map((p, k) => [p[0] - pts[k][0], p[1] - pts[k][1]]);
   doc.lines(moves, start[0], start[1], [1, 1], "F", true);
-}
-
-// ── Registration / tile helpers ────────────────────────────────────────────────
-
-// Given a real-world size in inches and page print area, return array of page tiles
-// Each tile: { pageCol, pageRow, srcX, srcY, srcW, srcH, destX, destY, destW, destH }
-// srcX/Y in inches (offset into the element), destX/Y in inches on the page
-function getTiles(realW, realH) {
-  const tiles = [];
-  let y = 0;
-  let row = 0;
-  while (y < realH) {
-    let x = 0;
-    let col = 0;
-    while (x < realW) {
-      const srcW = Math.min(PRINT_W, realW - x);
-      const srcH = Math.min(PRINT_H, realH - y);
-      tiles.push({ col, row, srcX: x, srcY: y, srcW, srcH, destX: MARGIN, destY: MARGIN });
-      x += PRINT_W;
-      col++;
-    }
-    y += PRINT_H;
-    row++;
-  }
-  return tiles;
 }
 
 // ── Border drawing on a page ───────────────────────────────────────────────────
@@ -257,9 +238,9 @@ function drawCoverPage(doc, { boardDims, items, borderStyle, borderEnabled }) {
 
   const rows = [
     ["Border strips", `${countBorderPages()} pages (tiles across full board length)`],
-    ["Letters", `${letters.length} letter${letters.length !== 1 ? "s" : ""} — printed at real-world board scale`],
-    ["Phrases", `${phrases.length} phrase${phrases.length !== 1 ? "s" : ""} — tiled if larger than one page`],
-    ["Clipart", `${images.length} image${images.length !== 1 ? "s" : ""} — tiled if larger than one page`],
+    ["Board pages", `${letters.length + phrases.length + images.length} items printed exactly where they sit on the board`],
+    ["Letters / phrases", `${letters.length} letter${letters.length !== 1 ? "s" : ""}, ${phrases.length} phrase${phrases.length !== 1 ? "s" : ""}`],
+    ["Clipart", `${images.length} image${images.length !== 1 ? "s" : ""}`],
   ];
 
   let ry = 4.0;
@@ -286,8 +267,8 @@ function drawCoverPage(doc, { boardDims, items, borderStyle, borderEnabled }) {
   const instructions = [
     "• Print all pages on standard 8.5\" × 11\" paper",
     "• Use cardstock for letters and clipart (recommended)",
-    "• Each item prints at true size — cut and assemble",
-    "• Items larger than one page: cut along dashed lines and tape pages together",
+    "• Board pages print at true size, in the same rows/columns as the app's grid",
+    "• See the Board Page Map (next page) for where each page goes and how to overlap them",
     "• Border strips: tape end-to-end along each edge of your board",
     "• Page labels show which row/column each tile belongs to",
   ];
@@ -504,146 +485,237 @@ async function drawBorderStripDirect(doc, { borderStyle, borderColors, borderEna
   }
 }
 
-// ── Generic tiled item pages ───────────────────────────────────────────────────
-// Draws any item at true real-world scale, tiled across as many pages as needed
+// ── Board pages (WYSIWYG) ─────────────────────────────────────────────────────
+// The board is split into page cells exactly like the grid in the app.
+// Each printed page shows its cell plus a 0.5" strip of the next cell to the
+// right and below, so neighbouring pages overlap and can be lined up and glued.
 
-function drawTiledItem(doc, { realW, realH, label, drawContent, bgColor }) {
-  const tiles = getTiles(realW, realH);
-  const totalPages = tiles.length;
+const PX_TO_IN = 12 / SCALE_BASE; // board px → inches
+const RENDER_DPI = 150;
 
-  tiles.forEach(({ col, row, srcX, srcY, srcW, srcH }) => {
-    doc.addPage();
+function loadImg(src) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
 
-    // Page footer
-    doc.setFont("helvetica", "bold"); setTextCol(doc, "#cccccc"); doc.setFontSize(7);
-    const pageLabel = totalPages > 1
-      ? `KALEIDOPRINT — ${label}  |  tile col ${col+1} row ${row+1} of ${Math.ceil(realW/PRINT_W)}×${Math.ceil(realH/PRINT_H)}`
-      : `KALEIDOPRINT — ${label}`;
-    doc.text(pageLabel, i(PAGE_W / 2), i(PAGE_H - 0.2), { align: "center" });
+// Bounding box of an item in board px (matches itemBounds in Kaleidoprint.tsx)
+function boundsOf(it) {
+  if (it.type === "image") return { x: it.x, y: it.y, w: it.w || it.size, h: it.h || it.size };
+  if (it.type === "letter") return { x: it.x, y: it.y, w: it.size * 0.72, h: it.size };
+  if (it.type === "phrase") return { x: it.x, y: it.y, w: it.text.length * it.size * 0.56 + 8, h: it.size * 1.2 };
+  return { x: it.x, y: it.y, w: 60, h: 60 };
+}
 
-    // White background
-    setFill(doc, bgColor || "#ffffff");
-    doc.rect(i(MARGIN), i(MARGIN), i(srcW), i(srcH), "F");
+export function boardPageGrid(boardDims) {
+  const boardW = boardDims.w * 12, boardH = boardDims.h * 12;
+  return { cols: Math.max(1, Math.ceil(boardW / CELL_W)), rows: Math.max(1, Math.ceil(boardH / CELL_H)), boardW, boardH };
+}
 
-    // Let caller draw content at this tile offset
-    drawContent(doc, srcX, srcY, srcW, srcH);
-
-    // Cut/tape guides
-    const cutLabel = totalPages > 1
-      ? `Cut · col ${col+1} row ${row+1} — tape pages together in order`
-      : "Cut along dashed line";
-    dashedRect(doc, i(MARGIN), i(MARGIN), i(srcW), i(srcH), cutLabel);
-
-    // Tile alignment marks for multi-page items
-    if (totalPages > 1) {
-      doc.setFont("helvetica", "normal"); setTextCol(doc, "#cccccc"); doc.setFontSize(6);
-      doc.text(`↕ ${(srcY).toFixed(1)}"–${(srcY + srcH).toFixed(1)}"  ↔ ${(srcX).toFixed(1)}"–${(srcX + srcW).toFixed(1)}"`,
-        i(PAGE_W - MARGIN), i(PAGE_H - 0.2), { align: "right" });
+// Draw every board item onto a 2D canvas context that is already in board-px space
+function drawItemsOnCanvas(ctx, items, imgCache) {
+  items.forEach(it => {
+    ctx.save();
+    if (it.type === "letter" || it.type === "phrase") {
+      const text = it.type === "letter" ? it.letter : it.text;
+      const pw = it.type === "letter" ? it.size * 0.72 : it.text.length * it.size * 0.56;
+      const cx = it.x + (it.type === "letter" ? it.size * 0.36 : pw / 2);
+      const cy = it.y + it.size * 0.5;
+      if (it.rotate) { ctx.translate(cx, cy); ctx.rotate(it.rotate * Math.PI / 180); ctx.translate(-cx, -cy); }
+      ctx.font = `${it.size}px '${it.font}', cursive`;
+      ctx.textBaseline = "alphabetic";
+      ctx.lineJoin = "round";
+      ctx.lineWidth = it.type === "letter" ? 3 : 2;
+      ctx.strokeStyle = "#ffffff";
+      ctx.strokeText(text, it.x, it.y + it.size);
+      ctx.fillStyle = it.color || "#333333";
+      ctx.fillText(text, it.x, it.y + it.size);
+    } else if (it.type === "image") {
+      const img = imgCache.get(it.src);
+      const bw = it.w || it.size, bh = it.h || it.size;
+      if (img) {
+        const cx = it.x + bw / 2, cy = it.y + bh / 2;
+        if (it.rotate) { ctx.translate(cx, cy); ctx.rotate(it.rotate * Math.PI / 180); ctx.translate(-cx, -cy); }
+        const s = Math.min(bw / img.naturalWidth, bh / img.naturalHeight); // keep ratio ("contain")
+        const dw = img.naturalWidth * s, dh = img.naturalHeight * s;
+        ctx.drawImage(img, it.x + (bw - dw) / 2, it.y + (bh - dh) / 2, dw, dh);
+      }
     }
+    ctx.restore();
   });
 }
 
-// ── Letter pages ───────────────────────────────────────────────────────────────
+async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
+  const { cols, rows, boardW, boardH } = boardPageGrid(boardDims);
+  const total = cols * rows;
 
-function drawLetterPages(doc, { items, boardDims, bgColor }) {
-  const letters = items.filter(it => it.type === "letter");
-  if (!letters.length) return;
+  // Make sure fonts and images are ready before drawing
+  const fonts = [...new Set(items.filter(it => it.font).map(it => `${Math.round(it.size)}px '${it.font}'`))];
+  try { await Promise.all(fonts.map(f => document.fonts.load(String(f)))); await document.fonts.ready; } catch { /* ignore */ }
+  const imgCache = new Map();
+  for (const it of items) {
+    if (it.type === "image" && it.src && !imgCache.has(it.src)) imgCache.set(it.src, await loadImg(it.src));
+  }
 
-  letters.forEach((item, idx) => {
-    // Real-world size from canvas px
-    const realW = pxToIn(item.size * 0.75, boardDims); // approximate glyph width
-    const realH = pxToIn(item.size, boardDims);
+  const k = RENDER_DPI * PX_TO_IN; // canvas px per board px
+  const canvas = document.createElement("canvas");
+  canvas.width = Math.round(PRINT_W * RENDER_DPI);
+  canvas.height = Math.round(PRINT_H * RENDER_DPI);
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const printed = [];
 
-    drawTiledItem(doc, {
-      realW, realH,
-      label: `LETTER "${item.letter}" (${idx + 1}/${letters.length})`,
-      bgColor,
-      drawContent: (doc, srcX, srcY, srcW, srcH) => {
-        // Center the letter on the visible tile area
-        const [r,g,b] = hexToRgb(item.color || "#333333");
-        doc.setTextColor(r,g,b);
-        doc.setFont("helvetica", "bold");
-        // Font size = realH converted to points, adjusted for tile crop
-        const fs = i(realH * 0.85);
-        doc.setFontSize(fs);
-        // Position: center of tile, offset by srcX/srcY within the glyph
-        const textX = i(MARGIN + realW / 2 - srcX);
-        const textY = i(MARGIN + realH * 0.88 - srcY);
-        // Only draw if text anchor is within tile
-        doc.text(item.letter, textX, textY, { align: "center" });
-      }
-    });
-  });
-}
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      // Page region in board inches
+      const x0 = c * CELL_W, y0 = r * CELL_H;
+      // Which items touch this page?
+      const onPage = items.filter(it => {
+        const b = boundsOf(it);
+        const bx = b.x * PX_TO_IN, by = b.y * PX_TO_IN, bw = b.w * PX_TO_IN, bh = b.h * PX_TO_IN;
+        return bx < x0 + PRINT_W && bx + bw > x0 && by < y0 + PRINT_H && by + bh > y0;
+      });
+      if (!onPage.length && !printBg) continue;
 
-// ── Phrase pages ───────────────────────────────────────────────────────────────
+      // Render this page region
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.setTransform(k, 0, 0, k, -(x0 / PX_TO_IN) * k, -(y0 / PX_TO_IN) * k);
+      if (printBg) { ctx.fillStyle = bgColor || "#ffffff"; ctx.fillRect(0, 0, boardW / PX_TO_IN, boardH / PX_TO_IN); }
+      drawItemsOnCanvas(ctx, onPage, imgCache);
 
-function drawPhrasePages(doc, { items, boardDims, bgColor }) {
-  const phrases = items.filter(it => it.type === "phrase");
-  if (!phrases.length) return;
-
-  phrases.forEach((item, idx) => {
-    const realH = pxToIn(item.size, boardDims);
-    // Estimate width: ~0.6 * size * charcount in px → inches
-    const realW = pxToIn(item.size * 0.58 * item.text.length, boardDims);
-
-    drawTiledItem(doc, {
-      realW, realH,
-      label: `PHRASE ${idx + 1}/${phrases.length}: "${item.text.slice(0, 20)}${item.text.length > 20 ? "…" : ""}"`,
-      bgColor,
-      drawContent: (doc, srcX, srcY, srcW, srcH) => {
-        const [r,g,b] = hexToRgb(item.color || "#333333");
-        doc.setTextColor(r,g,b);
-        doc.setFont("helvetica", "bold");
-        const fs = i(realH * 0.85);
-        doc.setFontSize(fs);
-        const textX = i(MARGIN + realW / 2 - srcX);
-        const textY = i(MARGIN + realH * 0.85 - srcY);
-        doc.text(item.text, textX, textY, { align: "center" });
-      }
-    });
-  });
-}
-
-// ── Clipart pages ──────────────────────────────────────────────────────────────
-
-function drawClipartPages(doc, { items, boardDims, bgColor }) {
-  const images = items.filter(it => it.type === "image");
-  if (!images.length) return;
-
-  images.forEach((item, idx) => {
-    // Fit the image inside its box without stretching (keeps original ratio)
-    const boxW = pxToIn(item.w || item.size, boardDims), boxH = pxToIn(item.h || item.size, boardDims);
-    let aspect = item.aspect || boxH / boxW;
-    try { const p = doc.getImageProperties(item.src); if (p.width && p.height) aspect = p.height / p.width; } catch { /* keep fallback */ }
-    const realW = Math.min(boxW, boxH / aspect), realH = realW * aspect;
-
-    drawTiledItem(doc, {
-      realW, realH,
-      label: `CLIPART ${idx + 1}/${images.length}`,
-      bgColor,
-      drawContent: (doc, srcX, srcY, srcW, srcH) => {
-        // Draw the portion of the image that falls in this tile
-        // jsPDF addImage draws the full image — we simulate cropping via positioning
-        // by placing the full image offset so the right portion shows in the tile area
-        try {
-          const fmt = item.src.startsWith("data:image/png") ? "PNG" : "JPEG";
-          // Place full image starting at (MARGIN - srcX, MARGIN - srcY)
-          // so the srcX/srcY portion aligns with MARGIN
-          doc.addImage(
-            item.src, fmt,
-            i(MARGIN - srcX), i(MARGIN - srcY),
-            i(realW), i(realH)
-          );
-        } catch(e) {
-          setFill(doc, "#eeeeee");
-          doc.rect(i(MARGIN), i(MARGIN), i(srcW), i(srcH), "F");
-          doc.setFont("helvetica", "normal"); setTextCol(doc, "#999999"); doc.setFontSize(10);
-          doc.text("[Image]", i(MARGIN + srcW / 2), i(MARGIN + srcH / 2), { align: "center" });
+      // Skip pages that came out blank (unless the background colour is being printed)
+      if (!printBg) {
+        const px = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+        let inked = false;
+        for (let p = 0; p < px.length; p += 16) {
+          if (px[p] < 245 || px[p + 1] < 245 || px[p + 2] < 245) { inked = true; break; }
         }
+        if (!inked) continue;
       }
-    });
-  });
+      printed.push(`${r},${c}`);
+      const jpeg = canvas.toDataURL("image/jpeg", 0.92);
+
+      doc.addPage();
+      doc.addImage(jpeg, "JPEG", i(MARGIN), i(MARGIN), i(PRINT_W), i(PRINT_H), undefined, "FAST");
+
+      // Board edge (last column / row pages extend past the board)
+      const edgeX = boardW - x0, edgeY = boardH - y0;
+      if (edgeX < PRINT_W || edgeY < PRINT_H) {
+        doc.setLineDashPattern([2, 2], 0); setDraw(doc, "#999999"); doc.setLineWidth(0.6);
+        if (edgeX < PRINT_W) doc.line(i(MARGIN + edgeX), i(MARGIN), i(MARGIN + edgeX), i(MARGIN + Math.min(edgeY, PRINT_H)));
+        if (edgeY < PRINT_H) doc.line(i(MARGIN), i(MARGIN + edgeY), i(MARGIN + Math.min(edgeX, PRINT_W)), i(MARGIN + edgeY));
+        doc.setLineDashPattern([], 0);
+      }
+
+      // Overlap strips (shared with the page to the right / below)
+      const hasRight = c < cols - 1, hasBelow = r < rows - 1;
+      const tint = (x, y, w, h) => {
+        try { doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.12 })); setFill(doc, "#E8186D"); doc.rect(x, y, w, h, "F"); doc.restoreGraphicsState(); } catch { /* ignore */ }
+      };
+      setDraw(doc, "#E8186D"); doc.setLineWidth(0.8); doc.setLineDashPattern([5, 3], 0);
+      if (hasRight) {
+        tint(i(MARGIN + CELL_W), i(MARGIN), i(OVERLAP), i(PRINT_H));
+        doc.line(i(MARGIN + CELL_W), i(MARGIN), i(MARGIN + CELL_W), i(MARGIN + PRINT_H));
+      }
+      if (hasBelow) {
+        tint(i(MARGIN), i(MARGIN + CELL_H), i(hasRight ? CELL_W : PRINT_W), i(OVERLAP));
+        doc.line(i(MARGIN), i(MARGIN + CELL_H), i(MARGIN + PRINT_W), i(MARGIN + CELL_H));
+      }
+      doc.setLineDashPattern([], 0);
+
+      // Trim marks on the top / left edges (cut these off when overlapping a neighbour)
+      setDraw(doc, "#888888"); doc.setLineWidth(0.5);
+      const m = i(MARGIN), tick = i(0.25);
+      if (c > 0) { doc.line(m, m - tick, m, m - 2); doc.line(m, m + i(PRINT_H) + 2, m, m + i(PRINT_H) + tick); }
+      if (r > 0) { doc.line(m - tick, m, m - 2, m); doc.line(m + i(PRINT_W) + 2, m, m + i(PRINT_W) + tick, m); }
+
+      // Labels
+      doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(11);
+      doc.text(`ROW ${r + 1} · COLUMN ${c + 1}`, m, m - 8);
+      doc.setFont("helvetica", "normal"); setTextCol(doc, "#E8186D"); doc.setFontSize(7);
+      if (hasRight) doc.text(`overlap: Row ${r + 1} · Col ${c + 2} lines up on the right dashed line`, i(PAGE_W - MARGIN), m - 8, { align: "right" });
+      if (hasBelow) doc.text(`overlap: Row ${r + 2} · Col ${c + 1} lines up on the bottom dashed line`, m, i(PAGE_H - MARGIN) + 9);
+      doc.setFont("helvetica", "bold"); setTextCol(doc, "#cccccc"); doc.setFontSize(7);
+      doc.text(`KALEIDOPRINT — BOARD PAGE  row ${r + 1} of ${rows}, column ${c + 1} of ${cols}  (${total} grid pages)`,
+        i(PAGE_W - MARGIN), i(PAGE_H - 0.12), { align: "right" });
+    }
+  }
+  return { cols, rows, printed: new Set(printed), imgCache };
+}
+
+// ── Assembly map (shows which page goes where) ────────────────────────────────
+
+function drawAssemblyMap(doc, { boardDims, items, boardColor }, layout) {
+  const { cols, rows, printed, imgCache } = layout;
+  doc.addPage();
+  doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(18);
+  doc.text("Board Page Map", i(PAGE_W / 2), i(0.9), { align: "center" });
+  doc.setFont("helvetica", "normal"); setTextCol(doc, "#555555"); doc.setFontSize(10);
+  doc.text(`${boardDims.w} ft × ${boardDims.h} ft board · ${cols} columns × ${rows} rows · matches the grid in the app`,
+    i(PAGE_W / 2), i(1.2), { align: "center" });
+
+  const areaW = PRINT_W, areaH = 5.2;
+  const cellW = Math.min(areaW / cols, (areaH / rows) * (CELL_W / CELL_H));
+  const cellH = cellW * (CELL_H / CELL_W);
+  const ox = (PAGE_W - cellW * cols) / 2, oy = 1.5;
+  // Mini picture of the whole board, drawn to the same scale as the grid
+  const f = cellW / CELL_W; // paper inches per board inch
+  const boardW = boardDims.w * 12, boardH = boardDims.h * 12;
+  try {
+    const dpi = 150;
+    const cv = document.createElement("canvas");
+    cv.width = Math.max(1, Math.round(boardW * f * dpi));
+    cv.height = Math.max(1, Math.round(boardH * f * dpi));
+    const cx2 = cv.getContext("2d");
+    const kk = (f * dpi) * PX_TO_IN; // canvas px per board px
+    cx2.fillStyle = boardColor || "#ffffff";
+    cx2.fillRect(0, 0, cv.width, cv.height);
+    cx2.setTransform(kk, 0, 0, kk, 0, 0);
+    drawItemsOnCanvas(cx2, items, imgCache);
+    doc.addImage(cv.toDataURL("image/jpeg", 0.9), "JPEG", i(ox), i(oy), i(boardW * f), i(boardH * f), undefined, "FAST");
+  } catch { /* map picture is optional */ }
+
+  // Page cells on top of the picture
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const x = i(ox + c * cellW), y = i(oy + r * cellH);
+      const has = printed.has(`${r},${c}`);
+      if (!has) {
+        // Fade pages that won't be printed
+        try { doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.6 })); setFill(doc, "#ffffff"); doc.rect(x, y, i(cellW), i(cellH), "F"); doc.restoreGraphicsState(); } catch { /* ignore */ }
+      }
+      setDraw(doc, has ? "#7c3aed" : "#cccccc"); doc.setLineWidth(has ? 0.9 : 0.5);
+      doc.rect(x, y, i(cellW), i(cellH), "S");
+      const fs = Math.max(5, Math.min(9, cellW * 8));
+      doc.setFontSize(fs);
+      doc.setFont("helvetica", has ? "bold" : "normal");
+      const label = has ? `R${r + 1} C${c + 1}` : "blank";
+      const tw = doc.getTextWidth(label) + 4;
+      setFill(doc, "#ffffff"); doc.rect(x + 1.5, y + 1.5, tw, fs + 2, "F");
+      setTextCol(doc, has ? "#7c3aed" : "#aaaaaa");
+      doc.text(label, x + 3.5, y + 1.5 + fs);
+    }
+  }
+
+  const iy = oy + rows * cellH + 0.45;
+  setFill(doc, "#fff8e1");
+  doc.roundedRect(i(MARGIN), i(iy), i(PRINT_W), i(2.3), 4, 4, "F");
+  doc.setFont("helvetica", "bold"); setTextCol(doc, "#f57f17"); doc.setFontSize(11);
+  doc.text("How to put the board together", i(MARGIN + 0.2), i(iy + 0.35));
+  const steps = [
+    "1. Lay the pages out by their ROW · COLUMN label, matching this map.",
+    "2. Trim the white margin off the TOP and LEFT edges of each page (use the grey trim marks).",
+    "    Skip the left trim on column 1 pages and the top trim on row 1 pages.",
+    "3. Each page's pink dashed strip is shared with the next page. Lay the next page on top",
+    "    so its trimmed edge sits exactly on the pink dashed line, then glue or tape.",
+    "4. Faded 'blank' squares have nothing on them, so they were not printed.",
+  ];
+  doc.setFont("helvetica", "normal"); setTextCol(doc, "#555555"); doc.setFontSize(9.5);
+  steps.forEach((line, idx) => doc.text(line, i(MARGIN + 0.2), i(iy + 0.68 + idx * 0.27)));
 }
 
 // ── Main export ────────────────────────────────────────────────────────────────
@@ -740,18 +812,22 @@ export async function exportPDF(state) {
     builtinColor:  state.builtinColor  || "#FF4E50",
     builtinThickIn: ((state.builtinThickness || 18) / 80) * 12, // canvas px to inches
     bgColor:       state.printBg ? (state.bgColor || "#ffffff") : "#ffffff",
+    boardColor:    state.bgColor || "#ffffff",
     boardDims:     state.boardDims     || { w: 4, h: 4 },
     items:         state.items         || [],
+    printBg:       !!state.printBg,
     patternSize:   state.patternSize   || 18,
     borderSize:    state.borderSize    || 18,
   };
 
   drawCoverPage(doc, s);
+  // Board pages go right after the cover; the map is inserted before them afterwards
+  const mapAt = doc.getNumberOfPages() + 1;
+  const layout = await drawBoardPages(doc, s);
+  drawAssemblyMap(doc, s, layout);
+  doc.movePage(doc.getNumberOfPages(), mapAt);
   await drawBorderPages(doc, s);
   if (s.builtinBorder !== "none") await drawBuiltinBorderPages(doc, s);
-  drawLetterPages(doc, s);
-  drawPhrasePages(doc, s);
-  drawClipartPages(doc, s);
 
   const blob = doc.output("blob");
   const url = URL.createObjectURL(blob);
