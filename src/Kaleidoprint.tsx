@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { exportPDF, CELL_W, CELL_H } from "./kaleidoprint-pdf";
+import { exportPDF, CELL_W, CELL_H, OVERLAP } from "./kaleidoprint-pdf";
 
 const RAINBOW = ["#FF4E50","#FC913A","#F9D62E","#52D726","#1A91FF","#9B59B6","#FF69B4"];
 const BOARD_PRESETS = { "4×4 ft": { w: 4, h: 4 }, "6×4 ft": { w: 6, h: 4 }, "8x4 ft": { w: 8, h: 4 } };
@@ -518,6 +518,7 @@ function PageGrid({ cw, ch, boardDims }) {
   const pxPerIn = SCALE_BASE / 12;
   const pageW = CELL_W * pxPerIn;
   const pageH = CELL_H * pxPerIn;
+  const ov = OVERLAP * pxPerIn; // overlap strip printed on both neighbouring pages
   const lines = [];
 
   let x = pageW;
@@ -525,6 +526,10 @@ function PageGrid({ cw, ch, boardDims }) {
   while (x < cw) {
     lines.push(
       <g key={`col-${col}`}>
+        {/* Pink strip = printed on both pages; pink dashed line = where the left page's print ends */}
+        <rect x={x} y={0} width={Math.min(ov, cw - x)} height={ch} fill="rgba(232,24,109,0.08)" />
+        {x + ov < cw && <line x1={x + ov} y1={0} x2={x + ov} y2={ch}
+          stroke="rgba(232,24,109,0.45)" strokeWidth={1} strokeDasharray="2,3" />}
         <line x1={x} y1={0} x2={x} y2={ch}
           stroke="rgba(100,100,200,0.25)" strokeWidth={1} strokeDasharray="4,3" />
         <rect x={x - 18} y={2} width={36} height={13} rx={3} fill="rgba(100,100,200,0.12)" />
@@ -542,6 +547,10 @@ function PageGrid({ cw, ch, boardDims }) {
   while (y < ch) {
     lines.push(
       <g key={`row-${row}`}>
+        {/* Pink strip = printed on both pages; pink dashed line = where the upper page's print ends */}
+        <rect x={0} y={y} width={cw} height={Math.min(ov, ch - y)} fill="rgba(232,24,109,0.08)" />
+        {y + ov < ch && <line x1={0} y1={y + ov} x2={cw} y2={y + ov}
+          stroke="rgba(232,24,109,0.45)" strokeWidth={1} strokeDasharray="2,3" />}
         <line x1={0} y1={y} x2={cw} y2={y}
           stroke="rgba(100,100,200,0.25)" strokeWidth={1} strokeDasharray="4,3" />
         <rect x={2} y={y - 8} width={36} height={13} rx={3} fill="rgba(100,100,200,0.12)" />
