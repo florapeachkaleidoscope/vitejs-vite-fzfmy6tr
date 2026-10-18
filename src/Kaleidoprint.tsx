@@ -511,6 +511,24 @@ function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
 const propLabel = { fontSize: 10, fontWeight: 700, color: "#E8186D", letterSpacing: 0.8, textTransform: "uppercase", marginBottom: 4 };
 const zBtn = { flex: 1, padding: "5px 0", fontSize: 11, fontWeight: 700, background: "#ede8ff", color: "#E8186D", border: "1px solid #c4aff8", borderRadius: 6, cursor: "pointer", fontFamily: "'Nunito', sans-serif" };
 
+// Row of alignment buttons (used for one item → board, or several → each other)
+function AlignBar({ label, onAlign }) {
+  const btns = [
+    ["left", "← Left"], ["hcenter", "↔ Center"], ["right", "Right →"],
+    ["top", "↑ Top"], ["vmiddle", "↕ Middle"], ["bottom", "Bottom ↓"],
+  ];
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={propLabel}>{label}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>
+        {btns.map(([mode, text]) => (
+          <button key={mode} onClick={() => onAlign(mode)} style={zBtn}>{text}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ── Page grid overlay ────────────────────────────────────────────────────────
 
 function PageGrid({ cw, ch, boardDims }) {
@@ -785,6 +803,30 @@ export default function Kaleidoprint() {
     }));
   };
   const endGroupScale = () => { groupBase.current = null; setGroupScale(100); };
+
+  // ── Align: one item lines up with the board, several line up with each other ──
+  const alignItems = (mode) => {
+    const sel = itemsRef.current.filter(it => selectedRef.current.has(it.id));
+    if (!sel.length) return;
+    let L = 0, T = 0, R = cw, B = ch;
+    if (sel.length > 1) {
+      const bs = sel.map(itemBounds);
+      L = Math.min(...bs.map(b => b.x)); T = Math.min(...bs.map(b => b.y));
+      R = Math.max(...bs.map(b => b.x + b.w)); B = Math.max(...bs.map(b => b.y + b.h));
+    }
+    snapshot();
+    setItems(prev => prev.map(it => {
+      if (!selectedRef.current.has(it.id)) return it;
+      const b = itemBounds(it);
+      if (mode === "left") return { ...it, x: L };
+      if (mode === "hcenter") return { ...it, x: (L + R) / 2 - b.w / 2 };
+      if (mode === "right") return { ...it, x: R - b.w };
+      if (mode === "top") return { ...it, y: T };
+      if (mode === "vmiddle") return { ...it, y: (T + B) / 2 - b.h / 2 };
+      if (mode === "bottom") return { ...it, y: B - b.h };
+      return it;
+    }));
+  };
 
   const addItem = useCallback((item) => {
     snapshot();
@@ -1323,7 +1365,8 @@ export default function Kaleidoprint() {
                 onPointerUp={endGroupScale} onKeyUp={endGroupScale}
                 style={{ flex: 1 }} />
               <span style={{ fontSize: 12, color: "#888", minWidth: 36 }}>{groupScale}%</span>
-            </div>
+              </div>
+            <AlignBar label="Align to each other" onAlign={alignItems} />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => deleteItem(null)} style={{
                 flex: 1, padding: "6px 0", fontSize: 12, fontWeight: 700,
@@ -1345,8 +1388,13 @@ export default function Kaleidoprint() {
             onDelete={() => deleteItem(selectedId)}
             onZUp={() => zUp(selectedId)}
             onZDown={() => zDown(selectedId)}
-          />
-        )}
+            />
+            )}
+            {selectedIds.size === 1 && selectedItem && (
+              <div style={{ padding: "0 16px 6px", background: "#fff5f8" }}>
+                <AlignBar label="Align on board" onAlign={alignItems} />
+              </div>
+            )}
 
         {/* Undo + Export */}
         <div style={{ padding: "12px 16px", borderTop: "1px solid #e8e0f5", flexShrink: 0 }}>
