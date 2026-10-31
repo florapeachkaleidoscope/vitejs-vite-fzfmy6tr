@@ -385,10 +385,12 @@ async function drawBorderStripDirect(doc, { borderStyle, borderColors, borderEna
         tileImg.onerror = rej;
         tileImg.src = png.src;
       });
-      const sz = 512; // fixed size for consistent rendering
+      const sz = 1024; // fixed size for consistent rendering
       const c = document.createElement("canvas");
       c.width = sz; c.height = sz;
       const ctx = c.getContext("2d");
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = "high";
       // Apply rotation: user setting + extra 90deg for vertical sides
       const baseRot = png.rotate || 0;
       const rot = isVertSide ? (baseRot + 90) % 360 : baseRot;
@@ -409,25 +411,18 @@ async function drawBorderStripDirect(doc, { borderStyle, borderColors, borderEna
       const d = imgData.data;
       const tintColor = png.tint ? hexToRgb(png.tint) : null;
       for (let px = 0; px < d.length; px += 4) {
-        const alpha = d[px+3];
-        if (alpha > 10) {
-          if (tintColor) {
-            d[px]   = tintColor[0];
-            d[px+1] = tintColor[1];
-            d[px+2] = tintColor[2];
-          }
-          // Make fully opaque for JPEG (white background for transparent areas)
-          d[px+3] = 255;
-        } else {
-          // Transparent = white background
-          d[px]   = 255;
-          d[px+1] = 255;
-          d[px+2] = 255;
-          d[px+3] = 255;
-        }
+        const a = d[px+3] / 255;
+        // Blend onto white using the real alpha so tile edges stay smooth
+        const r0 = tintColor ? tintColor[0] : d[px];
+        const g0 = tintColor ? tintColor[1] : d[px+1];
+        const b0 = tintColor ? tintColor[2] : d[px+2];
+        d[px]   = Math.round(r0 * a + 255 * (1 - a));
+        d[px+1] = Math.round(g0 * a + 255 * (1 - a));
+        d[px+2] = Math.round(b0 * a + 255 * (1 - a));
+        d[px+3] = 255;
       }
       ctx.putImageData(imgData, 0, 0);
-      const jpeg = c.toDataURL("image/jpeg", 0.9);
+      const jpeg = c.toDataURL("image/jpeg", 0.95);
 
       // All sides tile horizontally as strips — left/right just have more segments
       for (let t = 0; t < tileCount; t++) {
@@ -491,7 +486,7 @@ async function drawBorderStripDirect(doc, { borderStyle, borderColors, borderEna
 // right and below, so neighbouring pages overlap and can be lined up and glued.
 
 const PX_TO_IN = 12 / SCALE_BASE; // board px → inches
-const RENDER_DPI = 150;
+const RENDER_DPI = 300;
 
 function loadImg(src) {
   return new Promise((resolve) => {
@@ -565,6 +560,8 @@ async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
   canvas.width = Math.round(PRINT_W * RENDER_DPI);
   canvas.height = Math.round(PRINT_H * RENDER_DPI);
   const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
   const printed = [];
 
   for (let r = 0; r < rows; r++) {
@@ -597,7 +594,7 @@ async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
         if (!inked) continue;
       }
       printed.push(`${r},${c}`);
-      const jpeg = canvas.toDataURL("image/jpeg", 0.92);
+      const jpeg = canvas.toDataURL("image/jpeg", 0.95);
 
       doc.addPage();
       doc.addImage(jpeg, "JPEG", i(MARGIN), i(MARGIN), i(PRINT_W), i(PRINT_H), undefined, "FAST");
