@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { exportPDF, CELL_W, CELL_H, OVERLAP } from "./kaleidoprint-pdf";
+import { kvGet, kvSet, downloadBoardFile, readBoardFile, newId } from "./kp-storage";
 
 const RAINBOW = ["#FF4E50","#FC913A","#F9D62E","#52D726","#1A91FF","#9B59B6","#FF69B4"];
 const BOARD_PRESETS = { "4×4 ft": { w: 4, h: 4 }, "6×4 ft": { w: 6, h: 4 }, "8x4 ft": { w: 8, h: 4 } };
@@ -20,6 +21,13 @@ const FONTS = [
 const LETTERS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const LETTER_COLORS = ["#FF4E50","#FC913A","#F9D62E","#4CAF50","#1A91FF","#9B59B6","#FF69B4","#00BCD4"];
 const SCALE_BASE = 80;
+
+// Hairline cut guide: a faint grey line just outside the white border on letters
+// and phrases, so you can see where to cut when they print on white paper.
+// CUT_LINE_W is the extra width over the white stroke on screen (~0.3px per side).
+// The printed line is set separately in kaleidoprint-pdf.ts.
+const CUT_LINE_COLOR = "#b0b0b0";
+const CUT_LINE_W = 0.6;
 
 function useGoogleFonts() {
   useEffect(() => {
@@ -608,6 +616,13 @@ function PageGrid({ cw, ch, boardDims }) {
 // ── ID generator ──────────────────────────────────────────────────────────────
 let idCounter = 1;
 const uid = () => `item-${idCounter++}`;
+// After loading a saved board, make sure new ids don't collide with loaded ones
+const bumpIdCounter = (items) => {
+  items.forEach(it => {
+    const m = /^item-(\d+)$/.exec(it.id || "");
+    if (m) idCounter = Math.max(idCounter, +m[1] + 1);
+  });
+};
 
 // ── Demo items ────────────────────────────────────────────────────────────────
 const DEMO_ITEMS = [
@@ -680,40 +695,43 @@ export default function Kaleidoprint() {
   const [clipartLibrary, setClipartLibrary] = useState([]);
   const [libraryLoaded, setLibraryLoaded] = useState(false);
 
+  // Clipart library lives in IndexedDB (see kp-storage.ts)
   useEffect(() => {
     (async () => {
-      try {
-        const result = await window.storage.get("kaleidoprint-clipart-library");
-        if (result && result.value) {
-          setClipartLibrary(JSON.parse(result.value));
-        }
-      } catch (_) {}
+      const lib = await kvGet("clipart-library");
+      if (Array.isArray(lib)) setClipartLibrary(lib as any);
       setLibraryLoaded(true);
     })();
   }, []);
 
   useEffect(() => {
     if (!libraryLoaded) return;
-    (async () => {
-      try {
-        await window.storage.set("kaleidoprint-clipart-library", JSON.stringify(clipartLibrary));
-      } catch (_) {}
-    })();
+    kvSet("clipart-library", clipartLibrary);
   }, [clipartLibrary, libraryLoaded]);
 
+  // Border tile library lives in IndexedDB too. Tiles saved by older versions in
+  // localStorage ("kp-border-tiles") are moved over once.
   useEffect(() => {
     (async () => {
-      try {
-        const raw = localStorage.getItem("kp-border-tiles");
-        if (raw) setBorderTileLibrary(JSON.parse(raw));
-      } catch (_) {}
+      let tiles = await kvGet("border-tiles");
+      if (!Array.isArray(tiles)) {
+        tiles = [];
+        try {
+          const raw = localStorage.getItem("kp-border-tiles");
+          if (raw) {
+            tiles = JSON.parse(raw);
+            if (await kvSet("border-tiles", tiles)) localStorage.removeItem("kp-border-tiles");
+          }
+        } catch (_) {}
+      }
+      setBorderTileLibrary(tiles as any);
       setBorderLibLoaded(true);
     })();
   }, []);
 
   useEffect(() => {
     if (!borderLibLoaded) return;
-    try { localStorage.setItem("kp-border-tiles", JSON.stringify(borderTileLibrary)); } catch (_) {}
+    kvSet("border-tiles", borderTileLibrary);
   }, [borderTileLibrary, borderLibLoaded]);
 
   const [activeTab, setActiveTab] = useState("board");
@@ -728,6 +746,130 @@ export default function Kaleidoprint() {
   const fileRef = useRef();
   const canvasRef = useRef();
   const borderTileRef = useRef();
+  const boardFileRef = useRef<HTMLInputElement>(null);
+
+  // ── Saving boards ─────────────────────────────────────────────────────────────
+  // The board you're working on autosaves to IndexedDB about half a second after
+  // each change and comes back when the app reopens. Named boards are kept in a
+  // "saved-boards" list; Export / Import moves a board between computers as a file.
+  const [boardLoaded, setBoardLoaded] = useState(false);
+  const [savedBoards, setSavedBoards] = useState<any[]>([]);
+  const [currentBoardId, setCurrentBoardId] = useState<string | null>(null);
+  const [currentBoardName, setCurrentBoardName] = useState("");
+  const [saveNote, setSaveNote] = useState("");
+
+  const getBoard = () => ({
+    items, boardPreset, boardDims, bgColor,
+    builtinBorder, builtinColor, builtinThickness,
+    borderPngs, printBg, showGrid,
+  });
+
+  const applyBoard = (b: any) => {
+    if (!b) return;
+    const its = Array.isArray(b.items) ? b.items : [];
+    bumpIdCounter(its);
+    setItems(its as any);
+    if (b.boardPreset) setBoardPreset(b.boardPreset);
+    if (b.boardDims) setBoardDims(b.boardDims);
+    if (b.bgColor) setBgColor(b.bgColor);
+    if (b.builtinBorder) setBuiltinBorder(b.builtinBorder);
+    if (b.builtinColor) setBuiltinColor(b.builtinColor);
+    if (b.builtinThickness) setBuiltinThickness(b.builtinThickness);
+    if (b.borderPngs) setBorderPngs(b.borderPngs);
+    if (typeof b.printBg === "boolean") setPrintBg(b.printBg);
+    if (typeof b.showGrid === "boolean") setShowGrid(b.showGrid);
+    history.current = [];
+    setSelectedIds(new Set());
+  };
+
+  // Restore the last board and the saved-boards list on start-up
+  useEffect(() => {
+    (async () => {
+      const [cur, list] = await Promise.all([kvGet("current-board"), kvGet("saved-boards")]);
+      if (Array.isArray(list)) setSavedBoards(list);
+      if (cur && cur.board) {
+        applyBoard(cur.board);
+        setCurrentBoardId(cur.id || null);
+        setCurrentBoardName(cur.name || "");
+      }
+      setBoardLoaded(true);
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Autosave the working board
+  useEffect(() => {
+    if (!boardLoaded) return;
+    const t = setTimeout(() => {
+      kvSet("current-board", { id: currentBoardId, name: currentBoardName, board: getBoard() });
+    }, 500);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [boardLoaded, items, boardPreset, boardDims, bgColor, builtinBorder, builtinColor,
+      builtinThickness, borderPngs, printBg, showGrid, currentBoardId, currentBoardName]);
+
+  const flashNote = (msg) => { setSaveNote(msg); setTimeout(() => setSaveNote(""), 2500); };
+
+  const writeSavedBoards = (list) => { setSavedBoards(list); kvSet("saved-boards", list); };
+
+  const saveBoardAs = () => {
+    const name = window.prompt("Name this board:", currentBoardName || "My board");
+    if (name === null) return;
+    const entry = { id: newId(), name: name.trim() || "Untitled board", savedAt: Date.now(), board: getBoard() };
+    writeSavedBoards([entry, ...savedBoards]);
+    setCurrentBoardId(entry.id);
+    setCurrentBoardName(entry.name);
+    flashNote(`Saved "${entry.name}"`);
+  };
+
+  const saveBoard = () => {
+    if (!currentBoardId || !savedBoards.some(b => b.id === currentBoardId)) { saveBoardAs(); return; }
+    writeSavedBoards(savedBoards.map(b => b.id === currentBoardId ? { ...b, savedAt: Date.now(), board: getBoard() } : b));
+    flashNote(`Saved "${currentBoardName}"`);
+  };
+
+  const newBoard = () => {
+    if (items.length && !window.confirm("Start a new board? Save this one first if you want to keep it.")) return;
+    applyBoard({ items: [] });
+    setCurrentBoardId(null);
+    setCurrentBoardName("");
+  };
+
+  const openBoard = (entry) => {
+    applyBoard(entry.board);
+    setCurrentBoardId(entry.id);
+    setCurrentBoardName(entry.name);
+    flashNote(`Opened "${entry.name}"`);
+  };
+
+  const renameBoard = (entry) => {
+    const name = window.prompt("Rename board:", entry.name);
+    if (name === null || !name.trim()) return;
+    writeSavedBoards(savedBoards.map(b => b.id === entry.id ? { ...b, name: name.trim() } : b));
+    if (entry.id === currentBoardId) setCurrentBoardName(name.trim());
+  };
+
+  const deleteBoard = (entry) => {
+    if (!window.confirm(`Delete "${entry.name}"? This can't be undone.`)) return;
+    writeSavedBoards(savedBoards.filter(b => b.id !== entry.id));
+    if (entry.id === currentBoardId) setCurrentBoardId(null);
+  };
+
+  const exportBoardFile = () => downloadBoardFile(currentBoardName || "board", getBoard());
+
+  const importBoardFile = async (e) => {
+    const f = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      const { name, board } = await readBoardFile(f);
+      const entry = { id: newId(), name: name || "Imported board", savedAt: Date.now(), board };
+      writeSavedBoards([entry, ...savedBoards]);
+      openBoard(entry);
+    } catch (err: any) {
+      alert("Couldn't open that file: " + (err && err.message ? err.message : err));
+    }
+  };
 
   const cw = boardDims.w * SCALE_BASE;
   const ch = boardDims.h * SCALE_BASE;
@@ -1022,6 +1164,7 @@ export default function Kaleidoprint() {
     { id: "letters", label: "Letters" },
     { id: "clipart", label: "Clipart" },
     { id: "phrases", label: "Phrases" },
+    { id: "saved", label: "Saved" },
   ];
 
   return (
@@ -1378,6 +1521,55 @@ export default function Kaleidoprint() {
               </Section>
             </div>
           )}
+
+          {activeTab === "saved" && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <Section title="This Board">
+                <div style={{ fontSize: 12, color: "#666", marginBottom: 8 }}>
+                  {currentBoardName ? <>Working on <b>{currentBoardName}</b></> : "Unsaved board"}
+                  <div style={{ fontSize: 10, color: "#aaa", marginTop: 2 }}>Your work autosaves and comes back when you reopen the app.</div>
+                </div>
+                <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+                  <button onClick={saveBoard} style={{ ...primaryBtn, flex: 1 }}>💾 Save</button>
+                  <button onClick={saveBoardAs} style={{ ...zBtn, flex: 1 }}>Save as…</button>
+                </div>
+                <button onClick={newBoard} style={{ ...zBtn, width: "100%", padding: "7px 0" }}>＋ New board</button>
+                {saveNote && <div style={{ fontSize: 11, color: "#2e7d32", marginTop: 6 }}>{saveNote}</div>}
+              </Section>
+
+              <Section title={`My Boards (${savedBoards.length})`}>
+                {savedBoards.length === 0 && (
+                  <div style={{ fontSize: 12, color: "#bbb", fontStyle: "italic" }}>No saved boards yet. Use Save to keep this one.</div>
+                )}
+                {savedBoards.map(b => (
+                  <div key={b.id} style={{
+                    display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", marginBottom: 5,
+                    borderRadius: 8, border: b.id === currentBoardId ? "1.5px solid #E8186D" : "1px solid #e8e0f5",
+                    background: b.id === currentBoardId ? "#fff0f5" : "#fff"
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 12, fontWeight: 700, color: "#444", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.name}</div>
+                      <div style={{ fontSize: 9, color: "#aaa" }}>{new Date(b.savedAt).toLocaleString()}</div>
+                    </div>
+                    <button onClick={() => openBoard(b)} style={{ ...zBtn, flex: "none", padding: "3px 8px" }}>Open</button>
+                    <button onClick={() => renameBoard(b)} title="Rename" style={{ ...zBtn, flex: "none", padding: "3px 6px" }}>✎</button>
+                    <button onClick={() => deleteBoard(b)} title="Delete" style={{ ...zBtn, flex: "none", padding: "3px 6px", color: "#e53935", borderColor: "#e53935", background: "#fff0f0" }}>✕</button>
+                  </div>
+                ))}
+              </Section>
+
+              <Section title="Backup">
+                <div style={{ display: "flex", gap: 6 }}>
+                  <button onClick={exportBoardFile} style={{ ...zBtn, padding: "7px 0" }}>⬇ Export file</button>
+                  <button onClick={() => boardFileRef.current?.click()} style={{ ...zBtn, padding: "7px 0" }}>⬆ Import file</button>
+                </div>
+                <input ref={boardFileRef} type="file" accept=".json,application/json" onChange={importBoardFile} style={{ display: "none" }} />
+                <div style={{ marginTop: 6, fontSize: 10, color: "#aaa" }}>
+                  Boards are kept in this browser. Export a file to back one up or move it to another computer.
+                </div>
+              </Section>
+            </div>
+          )}
         </div>
 
         {/* Properties panel */}
@@ -1580,28 +1772,50 @@ export default function Kaleidoprint() {
                     {item.type === "letter" && (() => {
                       const cx = item.x + (item.size * 0.36);
                       const cy = item.y + (item.size * 0.5);
-                      return <text
-                        x={item.x} y={item.y + item.size}
-                        fontFamily={`'${item.font}', cursive`}
-                        fontSize={item.size} fill={item.color}
-                        stroke="#fff" strokeWidth={3} paintOrder="stroke"
-                        style={{ userSelect: "none" }}
-                        transform={item.rotate ? `rotate(${item.rotate} ${cx} ${cy})` : undefined}
-                      >{item.letter}</text>;
+                      const tf = item.rotate ? `rotate(${item.rotate} ${cx} ${cy})` : undefined;
+                      return <>
+                        <text
+                          x={item.x} y={item.y + item.size}
+                          fontFamily={`'${item.font}', cursive`}
+                          fontSize={item.size} fill="none"
+                          stroke={CUT_LINE_COLOR} strokeWidth={3 + CUT_LINE_W} strokeLinejoin="round"
+                          style={{ userSelect: "none" }}
+                          transform={tf}
+                        >{item.letter}</text>
+                        <text
+                          x={item.x} y={item.y + item.size}
+                          fontFamily={`'${item.font}', cursive`}
+                          fontSize={item.size} fill={item.color}
+                          stroke="#fff" strokeWidth={3} strokeLinejoin="round" paintOrder="stroke"
+                          style={{ userSelect: "none" }}
+                          transform={tf}
+                        >{item.letter}</text>
+                      </>;
                     })()}
 
                     {item.type === "phrase" && (() => {
                       const pw = item.text.length * item.size * 0.56;
                       const cx = item.x + pw / 2;
                       const cy = item.y + item.size * 0.5;
-                      return <text
-                        x={item.x} y={item.y + item.size}
-                        fontFamily={`'${item.font}', cursive`}
-                        fontSize={item.size} fill={item.color}
-                        stroke="#fff" strokeWidth={2} paintOrder="stroke"
-                        style={{ userSelect: "none" }}
-                        transform={item.rotate ? `rotate(${item.rotate} ${cx} ${cy})` : undefined}
-                      >{item.text}</text>;
+                      const tf = item.rotate ? `rotate(${item.rotate} ${cx} ${cy})` : undefined;
+                      return <>
+                        <text
+                          x={item.x} y={item.y + item.size}
+                          fontFamily={`'${item.font}', cursive`}
+                          fontSize={item.size} fill="none"
+                          stroke={CUT_LINE_COLOR} strokeWidth={2 + CUT_LINE_W} strokeLinejoin="round"
+                          style={{ userSelect: "none" }}
+                          transform={tf}
+                        >{item.text}</text>
+                        <text
+                          x={item.x} y={item.y + item.size}
+                          fontFamily={`'${item.font}', cursive`}
+                          fontSize={item.size} fill={item.color}
+                          stroke="#fff" strokeWidth={2} strokeLinejoin="round" paintOrder="stroke"
+                          style={{ userSelect: "none" }}
+                          transform={tf}
+                        >{item.text}</text>
+                      </>;
                     })()}
 
                     {item.type === "image" && (

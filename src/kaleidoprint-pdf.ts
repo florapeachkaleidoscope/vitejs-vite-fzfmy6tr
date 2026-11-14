@@ -488,6 +488,13 @@ async function drawBorderStripDirect(doc, { borderStyle, borderColors, borderEna
 const PX_TO_IN = 12 / SCALE_BASE; // board px → inches
 const RENDER_DPI = 300;
 
+// Hairline cut guide drawn just outside the white border of letters and phrases,
+// so the cut line shows when printed on white paper. At 300 dpi one board px is
+// 0.15", so CUT_LINE_W is tiny: 0.08 board px ≈ 0.3 mm total, ~0.15 mm per side.
+// Raise to 0.12 for a bolder line, or change the colour to #999999 if it fades.
+const CUT_LINE_COLOR = "#b0b0b0";
+const CUT_LINE_W = 0.08;
+
 function loadImg(src) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -523,7 +530,11 @@ function drawItemsOnCanvas(ctx, items, imgCache) {
       ctx.font = `${it.size}px '${it.font}', cursive`;
       ctx.textBaseline = "alphabetic";
       ctx.lineJoin = "round";
-      ctx.lineWidth = it.type === "letter" ? 3 : 2;
+      const whiteW = it.type === "letter" ? 3 : 2;
+      ctx.lineWidth = whiteW + CUT_LINE_W;
+      ctx.strokeStyle = CUT_LINE_COLOR;
+      ctx.strokeText(text, it.x, it.y + it.size);
+      ctx.lineWidth = whiteW;
       ctx.strokeStyle = "#ffffff";
       ctx.strokeText(text, it.x, it.y + it.size);
       ctx.fillStyle = it.color || "#333333";
