@@ -292,12 +292,46 @@ function itemBounds(item) {
   return { x: item.x, y: item.y, w: 60, h: 60 };
 }
 
-// ── Selection / resize overlay ────────────────────────────────────────────────
+// ── Rotation helpers ─────────────────────────────────────────────────────────
 
-function SelectionBox({ item, scale, onResize }) {
+// The point an item turns around (same centre the board and the PDF rotate about)
+function rotCenter(item) {
+  if (item.type === "letter") return { cx: item.x + item.size * 0.36, cy: item.y + item.size * 0.5 };
+  if (item.type === "phrase") return { cx: item.x + (item.text.length * item.size * 0.56) / 2, cy: item.y + item.size * 0.5 };
+  const b = itemBounds(item);
+  return { cx: b.x + b.w / 2, cy: b.y + b.h / 2 };
+}
+
+// Keep an angle in degrees between -180 and 180
+const normDeg = (d) => {
+  const n = (((Math.round(d * 10) / 10) % 360) + 360) % 360;
+  return n > 180 ? n - 360 : n;
+};
+
+// Box around an item as it looks on the board, rotation included
+function visualBounds(item) {
+  const b = itemBounds(item);
+  if (!item.rotate) return b;
+  const { cx, cy } = rotCenter(item);
+  const a = item.rotate * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+  const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([px, py]) => [
+    cx + (px - cx) * cos - (py - cy) * sin,
+    cy + (px - cx) * sin + (py - cy) * cos,
+  ]);
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
+}
+
+// ── Selection / resize / rotate overlay ──────────────────────────────────────
+
+function SelectionBox({ item, scale, onResize, onRotate }) {
   const b = itemBounds(item);
   const pad = 4;
   const bx = b.x - pad, by = b.y - pad, bw = b.w + pad * 2, bh = b.h + pad * 2;
+  const rot = item.rotate || 0;
+  const { cx, cy } = rotCenter(item);
+  const knobY = by - 22; // rotate handle sits above the top edge
   const handles = [
     { id: "br", cx: bx + bw, cy: by + bh, cursor: "nwse-resize" },
     { id: "bl", cx: bx,       cy: by + bh, cursor: "nesw-resize" },
@@ -316,9 +350,14 @@ function SelectionBox({ item, scale, onResize }) {
     const startX = e.clientX, startY = e.clientY;
     const origB = { ...b };
 
+    const a = rot * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+
     const onMove = (me) => {
-      const dx = (me.clientX - startX) / scale;
-      const dy = (me.clientY - startY) / scale;
+      const sx = (me.clientX - startX) / scale;
+      const sy = (me.clientY - startY) / scale;
+      // Turn the mouse movement into the item's own frame so handles work when rotated
+      const dx = sx * cos + sy * sin;
+      const dy = -sx * sin + sy * cos;
       onResize(item.id, handleId, origB, dx, dy);
     };
     const onUp = () => {
@@ -329,10 +368,49 @@ function SelectionBox({ item, scale, onResize }) {
     window.addEventListener("mouseup", onUp);
   };
 
+  // Drag the round handle to turn the item; hold Shift to snap to 15°
+  const handleRotateDown = (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    e.nativeEvent && e.nativeEvent.stopImmediatePropagation && e.nativeEvent.stopImmediatePropagation();
+    const svg = e.currentTarget.ownerSVGElement;
+    if (!svg || !onRotate) return;
+    const rect = svg.getBoundingClientRect();
+    const scx = rect.left + cx * scale, scy = rect.top + cy * scale;
+    const a0 = Math.atan2(e.clientY - scy, e.clientX - scx) * 180 / Math.PI;
+    let started = false;
+    const onMove = (me) => {
+      const a = Math.atan2(me.clientY - scy, me.clientX - scx) * 180 / Math.PI;
+      let deg = rot + (a - a0);
+      deg = me.shiftKey ? Math.round(deg / 15) * 15 : Math.round(deg);
+      onRotate(item.id, normDeg(deg), !started);
+      started = true;
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
+
   return (
-    <g style={{ pointerEvents: "none" }}>
+    <g style={{ pointerEvents: "none" }} transform={rot ? `rotate(${rot} ${cx} ${cy})` : undefined}>
       <rect x={bx} y={by} width={bw} height={bh}
         fill="none" stroke="#E8186D" strokeWidth={1.5} strokeDasharray="5,3" rx={3} />
+      {onRotate && <>
+        <line x1={bx + bw / 2} y1={by} x2={bx + bw / 2} y2={knobY + 6} stroke="#E8186D" strokeWidth={1.5} />
+        <circle
+          cx={bx + bw / 2} cy={knobY} r={6}
+          fill="#fff" stroke="#E8186D" strokeWidth={1.5}
+          data-resize="true"
+          style={{ cursor: "grab", pointerEvents: "all" }}
+          onMouseDown={handleRotateDown}
+          onClick={e => e.stopPropagation()}
+        >
+          <title>Drag to rotate (hold Shift to snap to 15°)</title>
+        </circle>
+      </>}
       {handles.map(h => (
         <rect
           key={h.id}
@@ -413,7 +491,45 @@ function InchBox({ label, value, onCommit }) {
   );
 }
 
-function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
+// Rotation controls: slider, number box, 15° steps and reset.
+// value is null for a multi-selection, where only the step and reset buttons show.
+function RotateControls({ value, onSet, onStep, onBegin }) {
+  const [text, setText] = useState(value == null ? "" : String(value));
+  useEffect(() => { setText(value == null ? "" : String(value)); }, [value]);
+  const commit = () => {
+    const v = parseFloat(text);
+    if (Number.isFinite(v) && v !== value) { onBegin(); onSet(normDeg(v)); }
+    else setText(value == null ? "" : String(value));
+  };
+  const stepBtn = { ...zBtn, flex: "none", padding: "4px 8px" };
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={propLabel}>Rotation</div>
+      {value != null && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+          <input type="range" min={-180} max={180} step={1} value={value}
+            onPointerDown={onBegin}
+            onKeyDown={onBegin}
+            onChange={e => onSet(+e.target.value)}
+            style={{ flex: 1 }} />
+          <input type="number" min={-180} max={180} value={text}
+            onChange={e => setText(e.target.value)}
+            onBlur={commit}
+            onKeyDown={e => { if (e.key === "Enter") e.currentTarget.blur(); }}
+            style={{ width: 52, padding: "4px 6px", fontSize: 12, border: "1px solid #c4aff8", borderRadius: 6 }} />
+          <span style={{ fontSize: 12, color: "#888" }}>°</span>
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6 }}>
+        <button onClick={() => onStep(-15)} title="Rotate 15° left" style={stepBtn}>↺ 15°</button>
+        <button onClick={() => onStep(15)} title="Rotate 15° right" style={stepBtn}>↻ 15°</button>
+        <button onClick={() => onStep(null)} title="Back to straight" style={zBtn}>Reset</button>
+      </div>
+    </div>
+  );
+}
+
+function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown, rotateProps }) {
   if (!item) return null;
 
   return (
@@ -432,6 +548,8 @@ function PropertiesPanel({ item, onUpdate, onDelete, onZUp, onZDown }) {
         <button onClick={onZUp} title="Bring forward" style={zBtn}>↑ Forward</button>
         <button onClick={onZDown} title="Send backward" style={zBtn}>↓ Backward</button>
       </div>
+
+      {rotateProps && <RotateControls value={item.rotate || 0} {...rotateProps} />}
 
       {(item.type === "letter" || item.type === "phrase") && (
         <div style={{ marginBottom: 10 }}>
@@ -905,7 +1023,7 @@ export default function Kaleidoprint() {
       setMarquee(box);
       const next = new Set(base);
       itemsRef.current.forEach(it => {
-        const b = itemBounds(it);
+        const b = visualBounds(it);
         if (b.x < box.x + box.w && b.x + b.w > box.x && b.y < box.y + box.h && b.y + b.h > box.y) next.add(it.id);
       });
       setSelectedIds(next);
@@ -928,7 +1046,7 @@ export default function Kaleidoprint() {
       const base = itemsRef.current.filter(it => selectedRef.current.has(it.id));
       if (!base.length) return;
       snapshot();
-      const bs = base.map(itemBounds);
+      const bs = base.map(visualBounds);
       const minX = Math.min(...bs.map(b => b.x)), minY = Math.min(...bs.map(b => b.y));
       const maxX = Math.max(...bs.map(b => b.x + b.w)), maxY = Math.max(...bs.map(b => b.y + b.h));
       groupBase.current = { map: new Map(base.map(it => [it.id, it])), cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
@@ -952,20 +1070,22 @@ export default function Kaleidoprint() {
     if (!sel.length) return;
     let L = 0, T = 0, R = cw, B = ch;
     if (sel.length > 1) {
-      const bs = sel.map(itemBounds);
+      const bs = sel.map(visualBounds);
       L = Math.min(...bs.map(b => b.x)); T = Math.min(...bs.map(b => b.y));
       R = Math.max(...bs.map(b => b.x + b.w)); B = Math.max(...bs.map(b => b.y + b.h));
     }
     snapshot();
     setItems(prev => prev.map(it => {
       if (!selectedRef.current.has(it.id)) return it;
-      const b = itemBounds(it);
-      if (mode === "left") return { ...it, x: L };
-      if (mode === "hcenter") return { ...it, x: (L + R) / 2 - b.w / 2 };
-      if (mode === "right") return { ...it, x: R - b.w };
-      if (mode === "top") return { ...it, y: T };
-      if (mode === "vmiddle") return { ...it, y: (T + B) / 2 - b.h / 2 };
-      if (mode === "bottom") return { ...it, y: B - b.h };
+      // Line up what you see: the rotated box, shifted back onto the item's x/y
+      const b = visualBounds(it);
+      const ox = it.x - b.x, oy = it.y - b.y;
+      if (mode === "left") return { ...it, x: L + ox };
+      if (mode === "hcenter") return { ...it, x: (L + R) / 2 - b.w / 2 + ox };
+      if (mode === "right") return { ...it, x: R - b.w + ox };
+      if (mode === "top") return { ...it, y: T + oy };
+      if (mode === "vmiddle") return { ...it, y: (T + B) / 2 - b.h / 2 + oy };
+      if (mode === "bottom") return { ...it, y: B - b.h + oy };
       return it;
     }));
   };
@@ -991,6 +1111,24 @@ export default function Kaleidoprint() {
   const updateItem = useCallback((id, patch) => {
     snapshot();
     setItems(prev => prev.map(it => it.id === id ? { ...it, ...patch } : it));
+  }, [snapshot]);
+
+  // ── Rotation ──
+  // Set one item's angle. Pass snap=true on the first change of a drag so ⌘Z
+  // undoes the whole turn in one step.
+  const rotateItem = useCallback((id, deg, snap) => {
+    if (snap) snapshot();
+    setItems(prev => prev.map(it => it.id === id ? { ...it, rotate: normDeg(deg) } : it));
+  }, [snapshot]);
+
+  // Turn every selected item by the same step (each about its own centre);
+  // step null puts them back to straight.
+  const rotateSelected = useCallback((step) => {
+    const ids = selectedRef.current;
+    if (!ids.size) return;
+    snapshot();
+    setItems(prev => prev.map(it => !ids.has(it.id) ? it
+      : { ...it, rotate: step == null ? 0 : normDeg(((it as any).rotate || 0) + step) }));
   }, [snapshot]);
 
   const deleteItem = useCallback((id) => {
@@ -1589,6 +1727,7 @@ export default function Kaleidoprint() {
                 style={{ flex: 1 }} />
               <span style={{ fontSize: 12, color: "#888", minWidth: 36 }}>{groupScale}%</span>
               </div>
+            <RotateControls value={null} onSet={() => {}} onBegin={() => {}} onStep={rotateSelected} />
             <AlignBar label="Align to each other" onAlign={alignItems} />
             <div style={{ display: "flex", gap: 8 }}>
               <button onClick={() => deleteItem(null)} style={{
@@ -1611,6 +1750,11 @@ export default function Kaleidoprint() {
             onDelete={() => deleteItem(selectedId)}
             onZUp={() => zUp(selectedId)}
             onZDown={() => zDown(selectedId)}
+            rotateProps={{
+              onBegin: snapshot,
+              onSet: (deg) => rotateItem(selectedId, deg, false),
+              onStep: (step) => rotateSelected(step),
+            }}
             />
             )}
             {selectedIds.size === 1 && selectedItem && (
@@ -1829,7 +1973,8 @@ export default function Kaleidoprint() {
                     )}
 
                     {isSel && (
-                      <SelectionBox item={item} scale={scale} onResize={handleResize} />
+                      <SelectionBox item={item} scale={scale} onResize={handleResize}
+                        onRotate={selectedIds.size === 1 ? rotateItem : undefined} />
                     )}
                   </DraggableItem>
                 );

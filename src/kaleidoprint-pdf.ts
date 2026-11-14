@@ -505,11 +505,31 @@ function loadImg(src) {
 }
 
 // Bounding box of an item in board px (matches itemBounds in Kaleidoprint.tsx)
-function boundsOf(it) {
+function unrotatedBoundsOf(it) {
   if (it.type === "image") return { x: it.x, y: it.y, w: it.w || it.size, h: it.h || it.size };
   if (it.type === "letter") return { x: it.x, y: it.y, w: it.size * 0.72, h: it.size };
   if (it.type === "phrase") return { x: it.x, y: it.y, w: it.text.length * it.size * 0.56 + 8, h: it.size * 1.2 };
   return { x: it.x, y: it.y, w: 60, h: 60 };
+}
+
+// Same box once the item is rotated, so a turned item that pokes onto a
+// neighbouring page still gets drawn there. Rotates about the same centre as
+// drawItemsOnCanvas below.
+function boundsOf(it) {
+  const b = unrotatedBoundsOf(it);
+  if (!it.rotate) return b;
+  let cx, cy;
+  if (it.type === "letter") { cx = it.x + it.size * 0.36; cy = it.y + it.size * 0.5; }
+  else if (it.type === "phrase") { cx = it.x + (it.text.length * it.size * 0.56) / 2; cy = it.y + it.size * 0.5; }
+  else { cx = b.x + b.w / 2; cy = b.y + b.h / 2; }
+  const a = it.rotate * Math.PI / 180, cos = Math.cos(a), sin = Math.sin(a);
+  const pts = [[b.x, b.y], [b.x + b.w, b.y], [b.x, b.y + b.h], [b.x + b.w, b.y + b.h]].map(([px, py]) => [
+    cx + (px - cx) * cos - (py - cy) * sin,
+    cy + (px - cx) * sin + (py - cy) * cos,
+  ]);
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const x = Math.min(...xs), y = Math.min(...ys);
+  return { x, y, w: Math.max(...xs) - x, h: Math.max(...ys) - y };
 }
 
 export function boardPageGrid(boardDims) {
