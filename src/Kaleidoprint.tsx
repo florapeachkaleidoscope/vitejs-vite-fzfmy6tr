@@ -862,10 +862,41 @@ export default function Kaleidoprint() {
     }
   }, [snapshot, selectedIds]);
 
+  // ── Cut / Copy / Paste ──
+  const clipboard = useRef([]);
+  const pasteCount = useRef(0);
+
+  const copySelected = useCallback(() => {
+    const sel = itemsRef.current.filter(it => selectedRef.current.has(it.id));
+    if (sel.length === 0) return false;
+    clipboard.current = sel.map(it => ({ ...it }));
+    pasteCount.current = 0;
+    return true;
+  }, []);
+
+  const cutSelected = useCallback(() => {
+    if (copySelected()) deleteItem(null);
+  }, [copySelected, deleteItem]);
+
+  const pasteClipboard = useCallback(() => {
+    if (clipboard.current.length === 0) return;
+    snapshot();
+    pasteCount.current += 1;
+    const off = 20 * pasteCount.current;
+    const pasted = clipboard.current.map(it => ({ ...it, id: uid(), x: it.x + off, y: it.y + off }));
+    setItems(prev => [...prev, ...pasted]);
+    setSelectedIds(new Set(pasted.map(it => it.id)));
+  }, [snapshot]);
+
   useEffect(() => {
     const onKey = (e) => {
       const tag = e.target.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      const mod = e.ctrlKey || e.metaKey;
+      const k = e.key.toLowerCase();
+      if (mod && k === "c") { e.preventDefault(); copySelected(); return; }
+      if (mod && k === "x") { e.preventDefault(); cutSelected(); return; }
+      if (mod && k === "v") { e.preventDefault(); pasteClipboard(); return; }
       if ((e.ctrlKey || e.metaKey) && e.key === "z") {
         e.preventDefault();
         if (history.current.length === 0) return;
@@ -883,7 +914,7 @@ export default function Kaleidoprint() {
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [deleteItem]);
+  }, [deleteItem, copySelected, cutSelected, pasteClipboard]);
 
   const zUp = useCallback((id) => {
     snapshot();
