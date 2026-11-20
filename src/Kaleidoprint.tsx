@@ -778,6 +778,7 @@ export default function Kaleidoprint() {
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [exporting, setExporting] = useState(false);
   const [printBg, setPrintBg] = useState(false);
+  const [pdfTitle, setPdfTitle] = useState('');
   const [showGrid, setShowGrid] = useState(true);
   const [zoom, setZoom] = useState(1.0);
 
@@ -879,7 +880,7 @@ export default function Kaleidoprint() {
   const getBoard = () => ({
     items, boardPreset, boardDims, bgColor,
     builtinBorder, builtinColor, builtinThickness,
-    borderPngs, printBg, showGrid,
+    borderPngs, printBg, showGrid, pdfTitle,
   });
 
   const applyBoard = (b: any) => {
@@ -896,6 +897,7 @@ export default function Kaleidoprint() {
     if (b.borderPngs) setBorderPngs(b.borderPngs);
     if (typeof b.printBg === "boolean") setPrintBg(b.printBg);
     if (typeof b.showGrid === "boolean") setShowGrid(b.showGrid);
+    setPdfTitle(typeof b.pdfTitle === 'string' ? b.pdfTitle : '');
     history.current = [];
     setSelectedIds(new Set());
   };
@@ -924,7 +926,7 @@ export default function Kaleidoprint() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [boardLoaded, items, boardPreset, boardDims, bgColor, builtinBorder, builtinColor,
-      builtinThickness, borderPngs, printBg, showGrid, currentBoardId, currentBoardName]);
+      builtinThickness, borderPngs, printBg, showGrid, pdfTitle, currentBoardId, currentBoardName]);
 
   const flashNote = (msg) => { setSaveNote(msg); setTimeout(() => setSaveNote(""), 2500); };
 
@@ -1782,6 +1784,11 @@ export default function Kaleidoprint() {
           >
             ↩ Undo {history.current.length > 0 ? `(${history.current.length})` : ""}
           </button>
+          <label style={{ display: 'block', marginBottom: 10 }}>
+            <span style={{ display: 'block', fontSize: 11, fontWeight: 700, color: '#666', fontFamily: `'Nunito', sans-serif`, marginBottom: 4 }}>Name on PDF</span>
+            <input type='text' value={pdfTitle} onChange={e => setPdfTitle(e.target.value)} placeholder={currentBoardName || 'Bulletin Board Print Kit'} maxLength={60}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '7px 9px', fontSize: 13, border: '1px solid #c4aff8', borderRadius: 8, fontFamily: `'Nunito', sans-serif` }} />
+          </label>
           <label style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, cursor: "pointer" }}>
             <input type="checkbox" checked={showGrid} onChange={e => setShowGrid(e.target.checked)} />
             <span style={{ fontSize: 11, color: "#666", fontFamily: "'Nunito', sans-serif" }}>
@@ -1798,7 +1805,7 @@ export default function Kaleidoprint() {
             onClick={async () => {
               setExporting(true);
               try {
-                await exportPDF({ borderPngs, bgColor, boardDims, items, printBg, borderSize, builtinBorder, builtinColor, builtinThickness, boardName: currentBoardName });
+                await exportPDF({ borderPngs, bgColor, boardDims, items, printBg, borderSize, builtinBorder, builtinColor, builtinThickness, boardName: pdfTitle.trim() || currentBoardName });
               } catch(e) { alert("Export failed: " + e.message); }
               setExporting(false);
             }}
