@@ -186,94 +186,162 @@ function drawBorderTile(doc, { borderStyle, borderColors, borderEnabled, borderP
   }
 }
 
+// ── Flora Peach Kaleidoscope brand ─────────────────────────────────────────────
+// Colours sampled from the FPK logo. Every PDF uses this one look.
+
+const BRAND = {
+  magenta: "#B9519F",
+  indigo:  "#495BA6",
+  orange:  "#EF8921",
+  teal:    "#59C4BC",
+  pink:    "#ED175E",
+  ink:     "#1C1C1C", // headings
+  body:    "#4A4A4A", // body text
+  soft:    "#9A9A9A", // footer / small print
+};
+const BRAND_STRIPE = [BRAND.magenta, BRAND.indigo, BRAND.orange, BRAND.teal, BRAND.pink];
+const SHOP_NAME = "FLORA PEACH KALEIDOSCOPE";
+const FOOTER_NOTE = "Questions? Message me on Etsy  ·  For personal classroom use only  ·  Please don't share or resell";
+
+// Set to true once the border strip pages are ready to ship again
+const INCLUDE_BORDER_STRIPS = false;
+
+// FPK logo, built into this file so there's no separate image to upload
+const LOGO_URL = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAASwAAAFICAMAAADdxjMLAAAAYFBMVEX////5+vrVrobxiR/viSHviSDtiSJf0MdZxLxYxLxvr6qMcGdJXKlJW6hJW6ZJW6U6aGjDVqi7UaG5UZ/xH2j8F2PtF17pF13vFl5sUXpILjgMDA8CAgIDAAEAAAEAAADHyo4FAAAQQklEQVR42u2diXbbuA5ATTWT10qdWDOdJBVJi///lw/gJspLTXPR4gDntCexKC5XAAhAcnQ49EoqkrsiFT8cCBbBIlgEi2ARLIJFsAgWwSJYBItgESyCRbAIFsEiWASLYBEsgkWwCBbBIlgEi2ARLIJFsAgWwSJYBItgEax9wBpPFWWMmOpYW0iz1tAsaDdUFB4zgb6uRM0hFtY///5TTe5PdFT9z7pSFtavahIJ61hTngmWUsefx7d68lywJMEy8q+4N4FRiePfBAtZ/SJYD8EaCVZZWG8EKwqWVKKqfydYTwpLEqzoMOuXHBXBioQ1qPuwOMEiWASLYBEsgkWwCBbBIlgEi2ARLIJFsAgWwaoKayRYRSulBItq8ASLYO0K1tsbwaIHQ4o/ckSwHoJFz2fRk3/1niklWHGwJMGaMmm5cnJIsJ4U1rj2YzQ7Ckp/3d0Maz8nuSdYEQ+V1g209gMrIt+pHTvsCNb6scOzweIEKx6WIFixgVblusOuYN3/ivI41twO97Qb3o8dKnv4HcH6df97YZU9/J5gRRVpBDn4+PJfzRh+V7CGiC/+1nRau4L1K0KxajqtPcGK2Q7RaVWjtavdMMZp1cylnw5WTTvcF6xBndYsAO4KVsQzWlXtcFewYup/Ne1wX7DiPHy1/XBnsIaYGL6aHe7MDGOcVr0K4L5gxaWH1Vz8M8Kq5uL3Buv+VwdQtSqVHnYGKyY9rKdaO4MV6bQqqdbuYMUED7VUa2+w4uywkmrtDVacHVZSrf3Biqg81ArjdwfrV5Qd6jCeNCvSDqsY4g5h3f+rYyYwLe/jd2iG0aolCFZkqFXDEHcIKy7UqmGIO4QVa4doiGWf1tojLFCtGM0q77b2CCtatcq6Lfjb+b2I+XsJG4MVFz2UDeSPf4NeFX3hxzKw4lULMupCtI4/37gq+CqZ5XzWP0OsahWiBSZ4FLGZQzSsEvLvVZkDi1UtvI2YTwtMsBfR0V3qe3d4kogIUbECX+jJpIVqxVX8nrLnNzoZWum4jm+oVuNY/F1hsp48+M6uGS2IIN6OGWol4xVl9+8KA7b8Z5IpAqpH1Oo5Xqwm9dMixwTHHu+tnuctdBI3xQdxgbM68ofU6lle2QeTB+WKz6uPqFVggY+u+jnebziCl+YQh0dpF/oqg2r8oq8ZReXqj/eNEY7/1Ab4OKonenPmiLhAu1C9jrdAoVIlo3qq14x6XOC9zoHpNxj+7UiloXqyd7IiLuCF5miJWXnTr8Y89lxIbDUqejWyciAEB2DH4A2ioFkASuecUtJ7pM95KSlEmLufbMZGL92+ksZeWJqUydb3Bd4jPc4SdXqd+3Zf505CsAgWwSJYBItgkRAsgkWwCBbBIlgkBItgESyCpdJqoDuH9Yenr06T3H9U6xR9B5o0S5nn2f7IE+7bCHWS+4Ul7zxK2sXKa4x8e+XwgORpp7BOI3/9tpj8BWO9iuVtsZwZCrjey8jLywso10uHuMpp12lJB69pvSwmr3+BLYq82/EPsiqoWfA8Wfftr5cFcX0zuEpYI3TB+V1gBXdD+PNXHNzJwrg6cPXZ6nWCDep9UVi6s5clTVHjejHqlfnU4Of70rBgNP66LC30XaheMk+t/nv/XBzW4m7+xeyM37rkbXE8oVr9/lwB1hq0METNUqvP98+PjzVgIa1u0RDiFeNTmcxKq9XHSrBsCPG6nId/5KtKlwGDVqvVYOnc59tCymVMUGZ49t+G1WqwFgshMIoXKtG1n7QJflpW68FaKISA/DDdBFGtPt4dqjVhLbIpGhM85Xr29WHVpwUm2CWbYOjZNwDLbIqvVU1wzDHBmVqtDatuXq1N8JQTs89RrQ2rYgiB+U36LmhSwY+qsBIevK+0KdoSfCHPXkmzxk24eZPflPPsFWBBu5QMrDwtXWIoErPXhNV/3wKtfBP8uMqqNKz/fecJszyVDCFMfpOM6pYJ1oD1A2k97LhkuU0xq8QAasXff99iVR7Wj//1iZtikbw6J7+5HlxV1SygdUoyxQIhRI3gqiospLWSm68SXNWFBbTaNWhlBVdQueJ/NMFasIDWj0RaGZtireCqNiyglRRCQF6dXJrPLB7fDq6qw/r+4ztsiglfZU8NIUzlqkpwVR+WdvNpmWLKppjp2WNMsCospCWTTPFhWlmePdYE68JabFMsdltwTVgL0cry7PJK8XgdWOmbYnxebWL2rDvzsagqw4JNMS2vVrGbYpZnf8gE68P6rvNqWSuvzrrbfK/EsDys7zXzalSrZM8+PmiCi8CqllcbtaoeiC4Lq9KmmPUQQ4IJLgQrg9bNTfE1K2BIMcGlYGWFEFfz6qwi38XDMduCVTivzlOrmCrfqrC+Z5TmLxxXZhx6SvDsy8JKzqsvaL1mxaEPlBjWhFVoU8zzVo+UGFaFVYJWplpJlW6CC8PC0nxeXp2tVhkmuDQsm1enPvKWqVaZJrg4rNQQYtQhRJ5a5Zrg8rCy8upMtZL8/Xceq8VhpZfmRYZapeY3a8NK3RRPKk+tPvJZrQArPYRQi+c368NKzatX9Owrwkotza8TXK0NKzmvTvTsH2VYrQQrOYRYoni8PVippfkFiscbhJW6Ka7i2VeHlfrI2xqefX1YVUOIsp59A7CSS/MP/CmG54GV/MjbYjH7pmCl5tULe/aNwKqwKWLA8N/vCqzWh1WalvnbTZ81WG0AVtlN8f53SvYNq2BefaoRMGwLVrG8uk7AsDFYZfLqsVLAsDlYBUKI2mq1IVi5m2J9tdoSrDxap1px6EZh5YQQY+HC1fZhYQiRllefllCrjcHKeeTtv99fDVbOI29LqNbGYKXfrxYL0NoarIxH3r7UbphXml9Ct7YHK/2RN3io6MvBSn/krfamuEVYtjSftCl+fIVEulQIIb5AiWYfIcRWYW0yhNgsrIyvkvFnrsGXLc0XeS55d7BSv41eL4TYMqycp+af8450lUfeKm2KG4e1rRBi67A2RWvzsLJCiC8HKz2vLh5ClP+jrjUE82qVWJovKYVh1ZJepN3IgDfHlZSif+K8ryZJtxTxubaysuprGVT1r1iorb7AdpTVZEx9YqusPOXr3FcTgkWwCBbBIlgEi4RgESyCRbAIFsEiIVgEi2ARLIJFsEgIFsEiWASLYBEsEoJFsAgWwSJYBIvEwBokSZQYzSKJEoTVcZIoGQ4kJCQkexXGwl+C//GQlhttfYOL4+xW9+a36SN2NnB46EojPz929uuVQWYDs7NOz7s5W8bhchm32LGodofD5Vzunc9yr6vv//4iWHo37HwZnd8Zuz64vh0XUvDOkh2gQd810+G+nw3RmuPTZ80g5Ch4yyYuXd9Mv7B24M2h73x/nZ1dY1rBiO7aD24o1rd+Eazl8HVFPjTBWXoOLZvUgTW9kFL0jZ8FLKvV3cOqme0GWmA3GokG0c4xKI/hcIAvz9gAlSuvjYPS346B//X8mLBxmZtGq1QbrNxFtsJ+yHp3PveAmAnrLDjoUDQH/wmDn5jtuUOrGNTA3Af4iWnU2x8ODZLisBBoZhq1OICWgdmuGq5nIaZZwGnQmV6eEvBJ0EJ300xdhBikxQCwpHNI8JOdOofu9YCwqAEvgODQoBn0CPokIXiorYNs4Di01usCtkYbWCctVHbo4K1gU/+iY7pb14N0sBrZ6sa96xyHsnOXw9SXvvwMVqs1pMWzZI9z4HgVTE9qwFXgvGVjrzkOC8hA5Zm5DqabHk/CU+ASgbaZTicMrV3YhMhrFjQavI5xfSnsqlqtCngFuk5NFoaKYOAI7AzOab0LF8pcVeiisShhIMtSXGpWg+c2kw4zHMp2oS+c1iPut4cOfnaaZWLsVgq9VCG822jMR6i1Bpn5dJxatEbT7JFBz5Sb35jDwCZYzMLCPvvA7nH9ZlUMzY0Zq2N25gEsZijaoabzhdXw7mB/9P3fgqXPYb5nZ35uyOkwDtPhkA6W9sbIksHymqlRo/vvxgYNCNvqayqDFnpS5nLaSbcI3y/DYML/WQArnIuZ/eBWBb+MaCRoNGAegc8anFKiOUnOJtGLsdfEqEiAQviWIaxgFWZkez0NLOymPQQjmIW1E0u4lg3008+danMwszTcnHecWuDqve5jS+g3WEaj9fbMDC2dYKfDkzws3RvO1kz5AhY0RCTh9iu4tqbeeejGT/KGZg2+Z0PBoJg0S4jZ/o5H57CacYAZhXuvWauepT8wLdwvzcPqRuZMcvKd+pI3zsEr27CZxYiacqhZ1rIkv6JZ0LAf2yYU3doolZ7f1D/6MSvBbijCK66n6K6V9VmKz/rvwO+HsMzUAsX310XP0h1gZ8zZyANYirVjNxsG1R0QGWk8LDWHhYtzsLTWNMYn9ercwZsLyC8qQd70tIcNzhNhtWiCNSmW1nJmtcE4Jbhgl5WmM1hg3uFu7ahrz+oOMDVvgQemLUjq8GIuCEt2Wth9WNZb94od5uZkHfxBe1Uu55rVNN4/4CpmsERnJTRD75otJecZLKxzzQKJgCUuYI03YWlvD87gYhmwtsPcZ7Vje90MMdxoJvtjU9xkNAujHvAM/XiZPxj/YBY/M8NrPmu2A4TW6Mywv+j/DNYYZ4bzForb0IF1GEfgNK+tY+6zZvuI6RT+6XhZtG4zmqkgQnDxtPbJLBRIpPz6UEWamQZc2Q1NWOQDc+/nHQ0eblMwDd5cOPju0sF3cwdvNDxo0WoH7yN+6wGCZXB2JShlLphwnWDoIAXwMlHIpFA27Naw8LjN1BBBqJgdBviT67iiOOdBqY6UDkF4oltOoUMXzE8HgnNYXIcOfB4YYOgwhqHDPLjQq25wGTajZVycYziHZSJL7lbjXLNRAWGiXN0jipKBz5qKHjpMZFM4CCf6U6Te57H/ebozD0qhi8Gkan6okTlYLAxK0YNOQampMRgHyH1ozEz6xOwC9QlaV2x0qrvBEVH/pmUg1cM8tr6S7qBRuc8aoQ3ArErT5Sr40xHdgYW7IQtSJHe+RCOZTpF86v8mLJtq9GdD2XwGFaCZUv6zdMd4HDZlNTonEm57MdNzyZkvY5isqZkSnINJ5kMMLIzEfcQFRQNMdHXqbE2POwMNwisfqmAizcJNwWagNkGdOdseWw5qHHCsm4m02VfDHQ2G0pkysxmwyZFhywkSadgl20H4vFLgLHAVXONruEvqMY9vbEatW7jUuZFhUI8YdMUHULpEWk2aZaS1JRThixtMCaeZZjP3qUzgLMOdBXqHapYtfWjn4MS4d6yNwDhKXC/RGMXgQVqDQ7kajHDVF+hfduclGtF508HCES4C83ZmqjN2ekJHf4gN5imUq/ScJy8aQ1jjaX1lq+1cxIVVsZ6jx7Z5Y2fHMYcDKNYc2uG8zAzVNSia6aJaMz/FaHrTwXbQTdP3BuHred1wNhTr/ASxugj985ZNE9GH2yacCBRshJkF9BvULvXwemnYgvvinh08aDfDcLc8nFYAZpnHc0Zi5U76452BoF4/v6Hg94jzOwI3B2M3blv4z3SV5A93Ja4MFU7wyg2Pi7sN3lUfLmrts2X+aRnsyt0ZEhISkj3I/wGdYRItaq1OgQAAAABJRU5ErkJggg==";
+const LOGO_RATIO = 328 / 300; // height / width of the logo file
+
+// Pale version of a brand colour for tile backgrounds (amt = how much white)
+function tint(hex, amt = 0.86) {
+  const [r, g, b] = hexToRgb(hex);
+  const mix = (v) => Math.round(v + (255 - v) * amt).toString(16).padStart(2, "0");
+  return `#${mix(r)}${mix(g)}${mix(b)}`;
+}
+
+// Row letter for page labels: A, B, C … (AA after Z, just in case)
+function rowLetter(r) {
+  let s = "", n = r;
+  do { s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26) - 1; } while (n >= 0);
+  return s;
+}
+export function pageLabel(r, c) { return `${rowLetter(r)}${c + 1}`; }
+
+async function loadLogoDataUrl() {
+  try {
+    const img: any = await loadImg(LOGO_URL);
+    if (!img) return null;
+    const cv = document.createElement("canvas");
+    cv.width = img.naturalWidth; cv.height = img.naturalHeight;
+    cv.getContext("2d")!.drawImage(img, 0, 0);
+    return cv.toDataURL("image/png");
+  } catch { return null; }
+}
+
+// Thin five-colour stripe, like the logo shapes laid side by side
+function drawStripe(doc, x, y, w, h) {
+  const seg = w / BRAND_STRIPE.length;
+  BRAND_STRIPE.forEach((col, k) => { setFill(doc, col); doc.rect(x + k * seg, y, seg + 0.5, h, "F"); });
+}
+
+// Same footer on every page
+function drawFooters(doc) {
+  const n = doc.getNumberOfPages();
+  for (let p = 1; p <= n; p++) {
+    doc.setPage(p);
+    const y = i(PAGE_H - 0.2);
+    doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(6.5);
+    doc.text(SHOP_NAME, i(MARGIN), y, { charSpace: 0.6 });
+    doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.soft); doc.setFontSize(6.5);
+    doc.text(FOOTER_NOTE, i(PAGE_W / 2 + 0.35), y, { align: "center" });
+    doc.text(`page ${p} of ${n}`, i(PAGE_W - MARGIN), y, { align: "right" });
+  }
+}
+
+// Numbered circle used in step lists
+function stepDot(doc, n, x, y, col) {
+  setFill(doc, col); doc.circle(x, y, i(0.13), "F");
+  doc.setFont("helvetica", "bold"); doc.setTextColor(255, 255, 255); doc.setFontSize(9);
+  doc.text(String(n), x, y + 3.2, { align: "center" });
+}
+
 // ── Cover page ─────────────────────────────────────────────────────────────────
+// Drawn last (onto page 1) so it can show the real page count.
 
-function drawCoverPage(doc, { boardDims, items, borderStyle, borderEnabled }) {
+function drawCoverPage(doc, { boardDims, items, boardName }, { logo, totalPages }) {
+  doc.setPage(1);
   const cx = PAGE_W / 2;
-  const letters = items.filter(it => it.type === "letter");
-  const phrases = items.filter(it => it.type === "phrase");
-  const images  = items.filter(it => it.type === "image");
+  const pieces = items.filter(it => ["letter", "phrase", "image"].includes(it.type)).length;
 
-  doc.setFont("helvetica", "bold");
-  setTextCol(doc, "#7c3aed");
-  doc.setFontSize(28);
-  doc.text("Kaleidoprint", i(cx), i(1.2), { align: "center" });
+  // Logo, centred like the START HERE guide
+  let y = 0.6;
+  if (logo) {
+    const lw = 1.3, lh = lw * LOGO_RATIO;
+    doc.addImage(logo, "PNG", i(cx - lw / 2), i(y), i(lw), i(lh));
+    y += lh + 0.35;
+  } else {
+    doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(12);
+    doc.text(SHOP_NAME, i(cx), i(y + 0.4), { align: "center", charSpace: 1.2 });
+    y += 0.8;
+  }
+  drawStripe(doc, i(MARGIN + 1.2), i(y), i(PRINT_W - 2.4), i(0.07));
+  y += 0.75;
 
-  doc.setFont("helvetica", "normal");
-  setTextCol(doc, "#555555");
-  doc.setFontSize(13);
-  doc.text("Bulletin Board Print Kit", i(cx), i(1.65), { align: "center" });
+  // Kit name
+  const title = (boardName || "").trim() || "Bulletin Board Print Kit";
+  doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(28);
+  const titleLines = doc.splitTextToSize(title, i(PRINT_W - 0.6));
+  titleLines.slice(0, 2).forEach((ln, k) => doc.text(ln, i(cx), i(y + k * 0.45), { align: "center" }));
+  y += 0.45 * Math.min(2, titleLines.length) - 0.05;
+  doc.setFont("helvetica", "italic"); setTextCol(doc, BRAND.indigo); doc.setFontSize(12);
+  doc.text("Bulletin board print kit", i(cx), i(y + 0.12), { align: "center" });
+  y += 0.55;
 
-  setFill(doc, "#f3eeff");
-  doc.roundedRect(i(MARGIN), i(2.1), i(PRINT_W), i(1.5), 4, 4, "F");
-
-  doc.setFont("helvetica", "bold");
-  setTextCol(doc, "#7c3aed");
-  doc.setFontSize(11);
-  doc.text("Board Size", i(MARGIN + 0.2), i(2.45));
-  doc.setFont("helvetica", "normal");
-  setTextCol(doc, "#333333");
-  doc.setFontSize(10);
-  doc.text(`${boardDims.w} ft × ${boardDims.h} ft  (${boardDims.w * 12}" × ${boardDims.h * 12}")`, i(MARGIN + 0.2), i(2.7));
-
-  doc.setFont("helvetica", "bold");
-  setTextCol(doc, "#7c3aed");
-  doc.setFontSize(11);
-  doc.text("Border", i(cx), i(2.45));
-  doc.setFont("helvetica", "normal");
-  setTextCol(doc, "#333333");
-  doc.setFontSize(10);
-  doc.text(borderEnabled ? borderStyle : "PNG tiles only", i(cx), i(2.7));
-
-  // How many pages per item type
-  const countBorderPages = () => {
-    let total = 0;
-    ["top","bottom","left","right"].forEach(side => {
-      const isVert = side === "left" || side === "right";
-      const realLen = isVert ? boardDims.h * 12 : boardDims.w * 12;
-      total += Math.ceil(realLen / PRINT_W);
-    });
-    return total;
-  };
-
-  const rows = [
-    ["Border strips", `${countBorderPages()} pages (tiles across full board length)`],
-    ["Board pages", `${letters.length + phrases.length + images.length} items printed exactly where they sit on the board`],
-    ["Letters / phrases", `${letters.length} letter${letters.length !== 1 ? "s" : ""}, ${phrases.length} phrase${phrases.length !== 1 ? "s" : ""}`],
-    ["Clipart", `${images.length} image${images.length !== 1 ? "s" : ""}`],
+  // At-a-glance tiles
+  const tiles = [
+    { label: "FITS A BOARD", value: `${boardDims.w} ft × ${boardDims.h} ft`, sub: `${boardDims.w * 12}" × ${boardDims.h * 12}"`, col: BRAND.magenta },
+    { label: "PAGES TO PRINT", value: String(totalPages), sub: `on 8.5" × 11" paper`, col: BRAND.indigo },
+    { label: "PIECES TO CUT", value: String(pieces), sub: "letters, words and clipart", col: BRAND.teal },
   ];
+  const gap = 0.2, tw = (PRINT_W - gap * 2) / 3, th = 1.05;
+  tiles.forEach((t, k) => {
+    const tx = MARGIN + k * (tw + gap);
+    setFill(doc, tint(t.col)); doc.roundedRect(i(tx), i(y), i(tw), i(th), 6, 6, "F");
+    setFill(doc, t.col); doc.rect(i(tx + 0.18), i(y + 0.16), i(0.35), i(0.05), "F");
+    doc.setFont("helvetica", "bold"); setTextCol(doc, t.col); doc.setFontSize(7.5);
+    doc.text(t.label, i(tx + 0.18), i(y + 0.4), { charSpace: 0.5 });
+    setTextCol(doc, BRAND.ink); doc.setFontSize(18);
+    doc.text(t.value, i(tx + 0.18), i(y + 0.72));
+    doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.body); doc.setFontSize(8.5);
+    doc.text(t.sub, i(tx + 0.18), i(y + 0.92));
+  });
+  y += th + 0.55;
 
-  let ry = 4.0;
-  doc.setFont("helvetica", "bold");
-  setTextCol(doc, "#333333");
-  doc.setFontSize(12);
-  doc.text("What's in this PDF", i(cx), i(ry - 0.15), { align: "center" });
-
-  rows.forEach(([label, val], idx) => {
-    const rowY = ry + 0.35 + idx * 0.42;
-    if (idx % 2 === 0) { setFill(doc, "#fafafa"); doc.rect(i(MARGIN), i(rowY - 0.18), i(PRINT_W), i(0.36), "F"); }
-    doc.setFont("helvetica", "bold"); setTextCol(doc, "#555555"); doc.setFontSize(10);
-    doc.text(label, i(MARGIN + 0.2), i(rowY + 0.08));
-    doc.setFont("helvetica", "normal");
-    doc.text(val, i(PAGE_W - MARGIN - 0.2), i(rowY + 0.08), { align: "right" });
+  // Quick start
+  doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(14);
+  doc.text("Quick start", i(MARGIN), i(y));
+  y += 0.4;
+  const steps = [
+    [`Print every page at "Actual size" / 100% (not "Fit to page").`, "Cardstock makes pieces sturdier. Laminate if you'd like to reuse the board."],
+    ["Lay the pages out using the board map on page 2.", "Each page has its spot (A1, A2, B1 …) printed at the top."],
+    ["Trim and overlap, then glue or tape the pages together.", "The pink dashed strip on each page is where the next page sits."],
+    ["Cut out your letters, words and clipart along the light grey outline.", "Then pin everything up and enjoy your board!"],
+  ];
+  const stepCols = [BRAND.magenta, BRAND.indigo, BRAND.orange, BRAND.pink];
+  steps.forEach(([main, sub], k) => {
+    stepDot(doc, k + 1, i(MARGIN + 0.15), i(y - 0.04), stepCols[k]);
+    doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(10.5);
+    doc.text(main, i(MARGIN + 0.45), i(y));
+    doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.body); doc.setFontSize(9.5);
+    doc.text(sub, i(MARGIN + 0.45), i(y + 0.2));
+    y += 0.62;
   });
 
-  const instrY = 6.6;
-  setFill(doc, "#fff8e1");
-  doc.roundedRect(i(MARGIN), i(instrY), i(PRINT_W), i(2.8), 4, 4, "F");
-  doc.setFont("helvetica", "bold"); setTextCol(doc, "#f57f17"); doc.setFontSize(11);
-  doc.text("Print Instructions", i(MARGIN + 0.2), i(instrY + 0.35));
-
-  const instructions = [
-    "• Print all pages on standard 8.5\" × 11\" paper",
-    "• Use cardstock for letters and clipart (recommended)",
-    "• Board pages print at true size, in the same rows/columns as the app's grid",
-    "• See the Board Page Map (next page) for where each page goes and how to overlap them",
-    "• Border strips: tape end-to-end along each edge of your board",
-    "• Page labels show which row/column each tile belongs to",
-  ];
-  doc.setFont("helvetica", "normal"); setTextCol(doc, "#555555"); doc.setFontSize(9.5);
-  instructions.forEach((line, idx) => doc.text(line, i(MARGIN + 0.2), i(instrY + 0.7 + idx * 0.33)));
+  // Thank-you note
+  y += 0.15;
+  setFill(doc, tint(BRAND.orange, 0.88)); doc.roundedRect(i(MARGIN), i(y), i(PRINT_W), i(0.75), 6, 6, "F");
+  doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(10.5);
+  doc.text("Thank you for supporting my small shop!", i(cx), i(y + 0.3), { align: "center" });
+  doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.body); doc.setFontSize(9.5);
+  doc.text("If your board turned out great, I'd love a review. It helps more than you know.", i(cx), i(y + 0.53), { align: "center" });
 }
 
 // ── Border strip pages (landscape, multiple strips per page) ──────────────────
@@ -323,7 +391,7 @@ async function drawBorderPages(doc, state) {
 
     // Footer
     doc.setFont("helvetica", "bold"); setTextCol(doc, "#cccccc"); doc.setFontSize(7);
-    doc.text("KALEIDOPRINT — BORDER STRIPS",
+    doc.text("BORDER STRIPS",
       i(PAGE_W / 2), i(PAGE_H - 0.2), { align: "center" });
 
     const LABEL_H = 0.2; // space for label above each strip
@@ -333,7 +401,7 @@ async function drawBorderPages(doc, state) {
       const visLen = Math.min(STRIP_W, stripLen - offsetIn);
 
       // Strip label
-      doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(8);
+      doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.indigo); doc.setFontSize(8);
       doc.text(`${label}  ${seg + 1}/${numSegments}`,
         i(MARGIN), i(rowY - 0.05));
 
@@ -576,7 +644,6 @@ function drawItemsOnCanvas(ctx, items, imgCache) {
 
 async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
   const { cols, rows, boardW, boardH } = boardPageGrid(boardDims);
-  const total = cols * rows;
 
   // Make sure fonts and images are ready before drawing
   const fonts = [...new Set(items.filter(it => it.font).map(it => `${Math.round(it.size)}px '${it.font}'`))];
@@ -642,9 +709,9 @@ async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
       // Overlap strips (shared with the page to the right / below)
       const hasRight = c < cols - 1, hasBelow = r < rows - 1;
       const tint = (x, y, w, h) => {
-        try { doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.12 })); setFill(doc, "#E8186D"); doc.rect(x, y, w, h, "F"); doc.restoreGraphicsState(); } catch { /* ignore */ }
+        try { doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.12 })); setFill(doc, BRAND.pink); doc.rect(x, y, w, h, "F"); doc.restoreGraphicsState(); } catch { /* ignore */ }
       };
-      setDraw(doc, "#E8186D"); doc.setLineWidth(0.8); doc.setLineDashPattern([5, 3], 0);
+      setDraw(doc, BRAND.pink); doc.setLineWidth(0.8); doc.setLineDashPattern([5, 3], 0);
       if (hasRight) {
         tint(i(MARGIN + CELL_W), i(MARGIN), i(OVERLAP), i(PRINT_H));
         doc.line(i(MARGIN + CELL_W), i(MARGIN), i(MARGIN + CELL_W), i(MARGIN + PRINT_H));
@@ -662,14 +729,17 @@ async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
       if (r > 0) { doc.line(m - tick, m, m - 2, m); doc.line(m + i(PRINT_W) + 2, m, m + i(PRINT_W) + tick, m); }
 
       // Labels
-      doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(11);
-      doc.text(`ROW ${r + 1} · COLUMN ${c + 1}`, m, m - 8);
-      doc.setFont("helvetica", "normal"); setTextCol(doc, "#E8186D"); doc.setFontSize(7);
-      if (hasRight) doc.text(`overlap: Row ${r + 1} · Col ${c + 2} lines up on the right dashed line`, i(PAGE_W - MARGIN), m - 8, { align: "right" });
-      if (hasBelow) doc.text(`overlap: Row ${r + 2} · Col ${c + 1} lines up on the bottom dashed line`, m, i(PAGE_H - MARGIN) + 9);
-      doc.setFont("helvetica", "bold"); setTextCol(doc, "#cccccc"); doc.setFontSize(7);
-      doc.text(`KALEIDOPRINT — BOARD PAGE  row ${r + 1} of ${rows}, column ${c + 1} of ${cols}  (${total} grid pages)`,
-        i(PAGE_W - MARGIN), i(PAGE_H - 0.12), { align: "right" });
+      const lbl = pageLabel(r, c);
+      doc.setFont("helvetica", "bold"); doc.setFontSize(9);
+      setFill(doc, BRAND.indigo); doc.roundedRect(m, m - 19, doc.getTextWidth(`Page ${lbl}`) + 12, 14, 3, 3, "F");
+      doc.setTextColor(255, 255, 255);
+      doc.text(`Page ${lbl}`, m + 6, m - 9);
+      doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.pink); doc.setFontSize(7.5);
+      // Overlap note top-right, so the bottom edge stays clear for the footer
+      const notes: string[] = [];
+      if (hasRight) notes.push(`${pageLabel(r, c + 1)} goes on the right`);
+      if (hasBelow) notes.push(`${pageLabel(r + 1, c)} goes below`);
+      if (notes.length) doc.text(`${notes.join("  ·  ")}  (line up on the pink dashed lines)`, i(PAGE_W - MARGIN), m - 9, { align: "right" });
     }
   }
   return { cols, rows, printed: new Set(printed), imgCache };
@@ -680,11 +750,12 @@ async function drawBoardPages(doc, { items, boardDims, bgColor, printBg }) {
 function drawAssemblyMap(doc, { boardDims, items, boardColor }, layout) {
   const { cols, rows, printed, imgCache } = layout;
   doc.addPage();
-  doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(18);
-  doc.text("Board Page Map", i(PAGE_W / 2), i(0.9), { align: "center" });
-  doc.setFont("helvetica", "normal"); setTextCol(doc, "#555555"); doc.setFontSize(10);
-  doc.text(`${boardDims.w} ft × ${boardDims.h} ft board · ${cols} columns × ${rows} rows · matches the grid in the app`,
-    i(PAGE_W / 2), i(1.2), { align: "center" });
+  drawStripe(doc, i(MARGIN), i(MARGIN), i(PRINT_W), i(0.06));
+  doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(20);
+  doc.text("Board map", i(PAGE_W / 2), i(0.95), { align: "center" });
+  doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.body); doc.setFontSize(10);
+  doc.text(`${boardDims.w} ft × ${boardDims.h} ft board  ·  ${printed.size} board page${printed.size !== 1 ? "s" : ""}  ·  find each page's label at its top-left corner`,
+    i(PAGE_W / 2), i(1.22), { align: "center" });
 
   const areaW = PRINT_W, areaH = 5.2;
   const cellW = Math.min(areaW / cols, (areaH / rows) * (CELL_W / CELL_H));
@@ -716,34 +787,41 @@ function drawAssemblyMap(doc, { boardDims, items, boardColor }, layout) {
         // Fade pages that won't be printed
         try { doc.saveGraphicsState(); doc.setGState(new doc.GState({ opacity: 0.6 })); setFill(doc, "#ffffff"); doc.rect(x, y, i(cellW), i(cellH), "F"); doc.restoreGraphicsState(); } catch { /* ignore */ }
       }
-      setDraw(doc, has ? "#7c3aed" : "#cccccc"); doc.setLineWidth(has ? 0.9 : 0.5);
+      setDraw(doc, has ? BRAND.indigo : "#cccccc"); doc.setLineWidth(has ? 0.9 : 0.5);
       doc.rect(x, y, i(cellW), i(cellH), "S");
-      const fs = Math.max(5, Math.min(9, cellW * 8));
+      const fs = Math.max(6, Math.min(10, cellW * 9));
       doc.setFontSize(fs);
-      doc.setFont("helvetica", has ? "bold" : "normal");
-      const label = has ? `R${r + 1} C${c + 1}` : "blank";
-      const tw = doc.getTextWidth(label) + 4;
-      setFill(doc, "#ffffff"); doc.rect(x + 1.5, y + 1.5, tw, fs + 2, "F");
-      setTextCol(doc, has ? "#7c3aed" : "#aaaaaa");
-      doc.text(label, x + 3.5, y + 1.5 + fs);
+      doc.setFont("helvetica", "bold");
+      const label = has ? pageLabel(r, c) : "skip";
+      const tw = doc.getTextWidth(label) + 6;
+      if (has) { setFill(doc, BRAND.indigo); doc.roundedRect(x + 2, y + 2, tw, fs + 3, 2, 2, "F"); doc.setTextColor(255, 255, 255); }
+      else { setFill(doc, "#ffffff"); doc.rect(x + 2, y + 2, tw, fs + 3, "F"); setTextCol(doc, "#aaaaaa"); doc.setFont("helvetica", "normal"); }
+      doc.text(label, x + 5, y + 2 + fs);
     }
   }
 
   const iy = oy + rows * cellH + 0.45;
-  setFill(doc, "#fff8e1");
-  doc.roundedRect(i(MARGIN), i(iy), i(PRINT_W), i(2.3), 4, 4, "F");
-  doc.setFont("helvetica", "bold"); setTextCol(doc, "#f57f17"); doc.setFontSize(11);
-  doc.text("How to put the board together", i(MARGIN + 0.2), i(iy + 0.35));
+  const boxH = Math.min(2.55, PAGE_H - 0.5 - iy);
+  setFill(doc, tint(BRAND.teal, 0.85));
+  doc.roundedRect(i(MARGIN), i(iy), i(PRINT_W), i(boxH), 6, 6, "F");
+  doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(12);
+  doc.text("How to put the board together", i(MARGIN + 0.25), i(iy + 0.38));
+  const lastRow = rowLetter(rows - 1);
   const steps = [
-    "1. Lay the pages out by their ROW · COLUMN label, matching this map.",
-    "2. Trim the white margin off the TOP and LEFT edges of each page (use the grey trim marks).",
-    "    Skip the left trim on column 1 pages and the top trim on row 1 pages.",
-    "3. Each page's pink dashed strip is shared with the next page. Lay the next page on top",
-    "    so its trimmed edge sits exactly on the pink dashed line, then glue or tape.",
-    "4. Faded 'blank' squares have nothing on them, so they were not printed.",
+    ["Lay the pages out in order, matching the labels on this map.", ""],
+    ["Trim the white margin off the top and left edge of each page.", `Use the grey trim marks. Row A pages keep their top edge; column 1 pages keep their left edge.`],
+    ["Overlap each page onto the pink dashed strip of the page before it.", "Line up the trimmed edge with the pink dashed line, then glue or tape."],
+    [`Squares marked "skip" have nothing on them, so they weren't printed.`, rows > 1 ? `Rows run A to ${lastRow} from top to bottom; columns run 1 to ${cols} from left to right.` : ""],
   ];
-  doc.setFont("helvetica", "normal"); setTextCol(doc, "#555555"); doc.setFontSize(9.5);
-  steps.forEach((line, idx) => doc.text(line, i(MARGIN + 0.2), i(iy + 0.68 + idx * 0.27)));
+  const stepCols = [BRAND.magenta, BRAND.indigo, BRAND.orange, BRAND.pink];
+  let sy = iy + 0.75;
+  steps.forEach(([main, sub], k) => {
+    stepDot(doc, k + 1, i(MARGIN + 0.38), i(sy - 0.04), stepCols[k]);
+    doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.ink); doc.setFontSize(9.5);
+    doc.text(main, i(MARGIN + 0.65), i(sy));
+    if (sub) { doc.setFont("helvetica", "normal"); setTextCol(doc, BRAND.body); doc.setFontSize(8.5); doc.text(sub, i(MARGIN + 0.65), i(sy + 0.18)); }
+    sy += sub ? 0.46 : 0.34;
+  });
 }
 
 // ── Main export ────────────────────────────────────────────────────────────────
@@ -778,7 +856,7 @@ async function drawBuiltinBorderPages(doc, state) {
   for (let s = 0; s < allSegments.length; s += stripsPerPage) {
     doc.addPage();
     doc.setFont("helvetica", "bold"); setTextCol(doc, "#cccccc"); doc.setFontSize(7);
-    doc.text("KALEIDOPRINT — BUILT-IN BORDER", i(PAGE_W/2), i(PAGE_H - 0.2), { align: "center" });
+    doc.text("BORDER", i(PAGE_W/2), i(PAGE_H - 0.2), { align: "center" });
 
     const batch = allSegments.slice(s, s + stripsPerPage);
     for (let idx = 0; idx < batch.length; idx++) {
@@ -786,7 +864,7 @@ async function drawBuiltinBorderPages(doc, state) {
       const rowY = MARGIN + idx * (BORDER_IN + LABEL_H + STRIP_GAP) + LABEL_H;
       const visLen = Math.min(STRIP_W, len - offsetIn);
 
-      doc.setFont("helvetica", "bold"); setTextCol(doc, "#7c3aed"); doc.setFontSize(8);
+      doc.setFont("helvetica", "bold"); setTextCol(doc, BRAND.indigo); doc.setFontSize(8);
       doc.text(`${label}  ${seg+1}/${numSegments}`, i(MARGIN), i(rowY - 0.05));
 
       // Draw the strip
@@ -846,16 +924,23 @@ export async function exportPDF(state) {
     printBg:       !!state.printBg,
     patternSize:   state.patternSize   || 18,
     borderSize:    state.borderSize    || 18,
+    boardName:     state.boardName     || "",
   };
+  const logo = await loadLogoDataUrl();
 
-  drawCoverPage(doc, s);
-  // Board pages go right after the cover; the map is inserted before them afterwards
+  // Page 1 is left empty for now; the cover is drawn last so it knows the page count.
+  // Board pages go right after the cover; the map is inserted before them afterwards.
   const mapAt = doc.getNumberOfPages() + 1;
   const layout = await drawBoardPages(doc, s);
   drawAssemblyMap(doc, s, layout);
   doc.movePage(doc.getNumberOfPages(), mapAt);
-  await drawBorderPages(doc, s);
-  if (s.builtinBorder !== "none") await drawBuiltinBorderPages(doc, s);
+  if (INCLUDE_BORDER_STRIPS) {
+    await drawBorderPages(doc, s);
+    if (s.builtinBorder !== "none") await drawBuiltinBorderPages(doc, s);
+  }
+  drawCoverPage(doc, s, { logo, totalPages: doc.getNumberOfPages() });
+  drawFooters(doc);
+  doc.setProperties({ title: s.boardName || "Bulletin Board Print Kit", author: "Flora Peach Kaleidoscope", creator: "Kaleidoprint" });
 
   const blob = doc.output("blob");
   const url = URL.createObjectURL(blob);

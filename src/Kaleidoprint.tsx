@@ -1798,7 +1798,7 @@ export default function Kaleidoprint() {
             onClick={async () => {
               setExporting(true);
               try {
-                await exportPDF({ borderPngs, bgColor, boardDims, items, printBg, borderSize, builtinBorder, builtinColor, builtinThickness });
+                await exportPDF({ borderPngs, bgColor, boardDims, items, printBg, borderSize, builtinBorder, builtinColor, builtinThickness, boardName: currentBoardName });
               } catch(e) { alert("Export failed: " + e.message); }
               setExporting(false);
             }}
