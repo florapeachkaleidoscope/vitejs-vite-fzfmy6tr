@@ -765,11 +765,12 @@ function drawAssemblyMap(doc, { boardDims, items, boardColor }, layout) {
   const f = cellW / CELL_W; // paper inches per board inch
   const boardW = boardDims.w * 12, boardH = boardDims.h * 12;
   try {
-    const dpi = 150;
+    const dpi = 300;
     const cv = document.createElement("canvas");
     cv.width = Math.max(1, Math.round(boardW * f * dpi));
     cv.height = Math.max(1, Math.round(boardH * f * dpi));
     const cx2 = cv.getContext("2d");
+    cx2.imageSmoothingEnabled = true; cx2.imageSmoothingQuality = "high";
     const kk = (f * dpi) * PX_TO_IN; // canvas px per board px
     cx2.fillStyle = boardColor || "#ffffff";
     cx2.fillRect(0, 0, cv.width, cv.height);
